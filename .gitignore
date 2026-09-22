@@ -23,3 +23,5 @@ reports/
 *passes*.txt
 *predictions*.txt
 !examples/elements-*.json
+!tests/fixtures/
+!tests/fixtures/pyephem-reference-*.json

@@ -18,8 +18,8 @@ kept entirely outside the repository.
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
 <img alt="Skyfield 1.55" src="https://img.shields.io/badge/skyfield-1.55%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.1.0" src="https://img.shields.io/badge/nextpass-v1.1.0-0f766e?style=for-the-badge">
-<img alt="20 tests passing" src="https://img.shields.io/badge/tests-20%20passing-2ea043?style=for-the-badge">
+<img alt="nextpass v1.2.0" src="https://img.shields.io/badge/nextpass-v1.2.0-0f766e?style=for-the-badge">
+<img alt="21 tests passing" src="https://img.shields.io/badge/tests-21%20passing-2ea043?style=for-the-badge">
 </p>
 <p>
 <img alt="Objects" src="https://img.shields.io/badge/objects-8%20tracked-0f766e?style=flat-square">
@@ -223,13 +223,32 @@ Tests pass a neutral location explicitly and never touch your config.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Twenty tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
+Twenty-one tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
 exports, satellite selection, OMM validation, cache recovery, element-file skipping,
 concurrent refreshes and stale-data rejection, with no network access. Geometry tests
 use saved real METEOR elements; all-catalog plumbing uses explicitly synthetic elements.
 Dense time sampling checks event detection independently of the event finder, while
-sharing its SGP4 propagator. The suite does not establish absolute pass-time accuracy
-against an external reference ephemeris dataset.
+sharing its SGP4 propagator. Saved reference cases add an independent comparison using
+PyEphem 4.1.6's libastro propagator: two METEOR satellites, neutral coordinates,
+10° reception threshold, low and high passes, and a Pacific/Auckland daylight-saving
+transition plus a Europe/Moscow pass that crosses local midnight. The reference
+generator is `tests/generate_reference.py`; it is run only in a temporary environment
+with `ephem==4.1.6`, `skyfield==1.55` and `sgp4==2.27` and
+does not add a production dependency. To reproduce the checked-in fixture:
+
+```sh
+python3 -m venv /private/tmp/nextpass-reference-venv
+/private/tmp/nextpass-reference-venv/bin/pip install ephem==4.1.6 skyfield==1.55 sgp4==2.27
+/private/tmp/nextpass-reference-venv/bin/python tests/generate_reference.py
+```
+
+Reference TLEs are exported from the exact saved OMM rows with `sgp4.exporter` 2.27 through Skyfield 1.55; measured differences are below 2 seconds and 0.05° for these cases,
+with tests allowing 3 seconds and 0.2° to accommodate two-second reference
+sampling, output rounding and implementation differences. Both identical-TLE and
+production OMM paths are checked. The timezone cases deliberately use the same
+neutral observer at 0° latitude/longitude; their timezone labels do not indicate
+observer locations. Agreement is a predictor regression, not
+observational truth.
 
 ---
 
@@ -241,6 +260,7 @@ against an external reference ephemeris dataset.
 | `examples/` | Public orbital elements used by tests; no personal prediction results |
 
 Sources: [Skyfield](https://rhodesmill.org/skyfield/earth-satellites.html) ·
+[PyEphem quick reference](https://rhodesmill.org/pyephem/quick.html) ·
 [CelesTrak GP formats](https://celestrak.org/NORAD/documentation/gp-data-formats.php) ·
 [AMSAT status](https://www.amsat.org/status/) ·
 [SatNOGS DB](https://db.satnogs.org/)

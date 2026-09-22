@@ -199,7 +199,7 @@ class PredictionTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as raised:
                 app.parser().parse_args(['--version'])
         self.assertEqual(raised.exception.code, 0)
-        self.assertIn('1.1.0', output.getvalue())
+        self.assertIn('1.2.0', output.getvalue())
         code, _out, err = self.run_cli('--hours', '08:00+01:00-22:00')
         self.assertEqual(code, 2)
         self.assertIn('without timezone offsets', err)
@@ -230,6 +230,74 @@ class PredictionTests(unittest.TestCase):
             peak = datetime.fromisoformat(predicted['peak'])
             self.assertLess(abs((peak - times[index].utc_datetime()).total_seconds()), 11)
             self.assertAlmostEqual(predicted['max_elevation_deg'], elevations[index], delta=0.1)
+
+    def test_independent_pyephem_reference_cases(self):
+        """Compare saved AOS/peak/LOS and elevation values from libastro."""
+        fixture = json.loads((ROOT / 'tests/fixtures/pyephem-reference-2026-09-21.json').read_text())
+        elements = {row['NORAD_CAT_ID']: row for row in json.loads(
+            (ROOT / 'examples/elements-2026-09-21.json').read_text())}
+        ts = load.timescale(builtin=True)
+        observer = wgs84.latlon(0, 0, elevation_m=0)
+        for case in fixture['cases']:
+            start = datetime.fromisoformat(case['start'])
+            end = datetime.fromisoformat(case['end'])
+            tz = ZoneInfo(case['timezone'])
+            actual = []
+            for norad in sorted(elements):
+                actual.extend(app.predict(EarthSatellite.from_omm(ts, elements[norad]), observer, ts,
+                                          start, end, tz, case['horizon_deg'], case['minimum_peak_deg']))
+            expected = sorted(case['passes'], key=lambda row: row['peak'])
+            actual.sort(key=lambda row: row['peak'])
+            self.assertEqual(len(actual), len(expected), case['name'])
+            for predicted, reference in zip(actual, expected):
+                self.assertEqual(predicted['norad'], reference['norad'], case['name'])
+                for field in ('rise', 'peak', 'set'):
+                    predicted_utc = datetime.fromisoformat(predicted[field]).astimezone(ZoneInfo('UTC'))
+                    reference_utc = datetime.fromisoformat(reference[field])
+                    self.assertLessEqual(abs((predicted_utc - reference_utc).total_seconds()), 3,
+                                         f"{case['name']} {predicted['norad']} {field}")
+                self.assertAlmostEqual(predicted['max_elevation_deg'], reference['max_elevation_deg'], delta=.2)
+
+            # The reference TLEs are the exact quantized inputs sent to PyEphem.
+            # This second check separates implementation differences from OMM->TLE
+            # field precision loss before comparing production's from_omm path.
+            same_tle = []
+            for norad in sorted(elements):
+                line1, line2 = case['reference_tles'][str(norad)]
+                satellite = EarthSatellite(line1, line2, ts=ts)
+                same_tle.extend(app.predict(satellite, observer, ts, start, end, tz,
+                                            case['horizon_deg'], case['minimum_peak_deg']))
+            same_tle.sort(key=lambda row: row['peak'])
+            self.assertEqual(len(same_tle), len(expected), f"{case['name']} same TLE")
+            for predicted, reference in zip(same_tle, expected):
+                self.assertEqual(predicted['norad'], reference['norad'])
+                for field in ('rise', 'peak', 'set'):
+                    self.assertLessEqual(abs((datetime.fromisoformat(predicted[field])
+                                              - datetime.fromisoformat(reference[field])).total_seconds()), 3)
+                self.assertAlmostEqual(predicted['max_elevation_deg'], reference['max_elevation_deg'], delta=.2)
+            elevations = [row['max_elevation_deg'] for row in expected]
+            self.assertLess(min(elevations), 40)
+            self.assertGreater(max(elevations), 60)
+        dst = next(case for case in fixture['cases'] if case['name'] == 'auckland-dst-transition')
+        offsets = {datetime.fromisoformat(row['peak']).utcoffset() for row in self._actual_for_reference_case(dst, elements, ts, observer)}
+        self.assertEqual(offsets, {timedelta(hours=12), timedelta(hours=13)})
+        midnight = next(case for case in fixture['cases'] if case['name'] == 'midnight-straddling-window')
+        midnight_tz = ZoneInfo(midnight['timezone'])
+        self.assertTrue(any(
+            datetime.fromisoformat(row['rise']).astimezone(midnight_tz).date()
+            != datetime.fromisoformat(row['peak']).astimezone(midnight_tz).date()
+            for row in midnight['passes']))
+
+    @staticmethod
+    def _actual_for_reference_case(case, elements, ts, observer):
+        start = datetime.fromisoformat(case['start'])
+        end = datetime.fromisoformat(case['end'])
+        tz = ZoneInfo(case['timezone'])
+        result = []
+        for norad in sorted(elements):
+            result.extend(app.predict(EarthSatellite.from_omm(ts, elements[norad]), observer, ts,
+                                      start, end, tz, case['horizon_deg'], case['minimum_peak_deg']))
+        return result
 
     def test_dst_interval_preserves_local_timezone_offsets(self):
         with tempfile.TemporaryDirectory() as directory:
