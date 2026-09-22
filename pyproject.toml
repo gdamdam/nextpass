@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=66.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nextpass"
+dynamic = ["version", "dependencies"]
+description = "Satellite pass prediction for weather, space station, and amateur satellites"
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.scripts]
+nextpass = "meteor_passes:main"
+
+[tool.setuptools]
+py-modules = ["meteor_passes", "terminal_view", "radio_metadata"]
+
+[tool.setuptools.dynamic]
+version = {attr = "meteor_passes.APP_VERSION"}
+dependencies = {file = ["requirements.txt"]}

@@ -1,6 +1,9 @@
 # Local/private configuration, generated reports, IQ and environments
 .venv/
 .cache/
+build/
+dist/
+*.egg-info/
 __pycache__/
 *.py[cod]
 .DS_Store

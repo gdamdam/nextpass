@@ -28,7 +28,7 @@ CATALOG = {
 }
 GROUPS = ('meteor', 'stations', 'amateur')
 SATELLITES = {cat: entry[0] for cat, entry in CATALOG.items()}
-APP_VERSION = '1.2.0'
+APP_VERSION = '1.3.0'
 
 # Required by Skyfield's EarthSatellite.from_omm().
 OMM_REQUIRED_FIELDS = (
@@ -68,7 +68,12 @@ def select(spec):
     if not chosen:
         raise ValueError('Satellite selection cannot be empty')
     return {cat: SATELLITES[cat] for cat in SATELLITES if cat in chosen}
-ROOT = Path(__file__).resolve().parent
+
+
+def default_cache_dir():
+    """Return a user-writable cache location for orbital element data."""
+    cache_home = os.environ.get('XDG_CACHE_HOME')
+    return (Path(cache_home) if cache_home else Path.home() / '.cache') / 'nextpass'
 
 
 def warning(message):
@@ -255,11 +260,16 @@ def parser():
     p.add_argument('--top', type=int, default=5, help='Number of best opportunities to highlight')
     p.add_argument('--refresh', action='store_true', help='Refresh orbital elements instead of using a cache younger than 6 hours')
     p.add_argument('--offline', action='store_true', help='Use cached orbital elements without network access')
+    p.add_argument('--radio', action='store_true', help='Include optional SatNOGS transmitter metadata (network/cache)')
+    p.add_argument('--band', help='Limit radio metadata to overlapping downlinks in a MHz range, e.g. 137-138')
+    p.add_argument('--refresh-radio', action='store_true', help='Refresh SatNOGS transmitter metadata (also enables --radio)')
+    p.add_argument('--radio-file', type=Path, help='Local JSON transmitter metadata supplement/override; no network required')
     p.add_argument('--satellites', help='Comma-separated labels ('
         + ', '.join(SATELLITES.values()) + '), groups (' + ', '.join(GROUPS) + ') or NORAD IDs; default all')
     p.add_argument('--elements', type=Path, help='CelesTrak JSON array of element sets; objects absent from the file are skipped with a warning')
     p.add_argument('--allow-stale', action='store_true', help='Permit dates more than 14 days from an orbital epoch; unreliable')
-    p.add_argument('--cache-dir', type=Path, default=ROOT / '.cache')
+    p.add_argument('--cache-dir', type=Path, default=default_cache_dir(),
+                   help='Orbital-element cache directory (default: XDG cache or ~/.cache/nextpass)')
     p.add_argument('--json', type=Path, dest='json_path', help='Save full results and metadata as JSON')
     p.add_argument('--csv', type=Path, dest='csv_path', help='Save chronological passes as CSV')
     return p
@@ -300,6 +310,8 @@ def main(argv=None):
             raise ValueError('Require 0 <= horizon <= min-elevation <= 90, with horizon < 90')
         if args.offline and args.refresh:
             raise ValueError('--offline and --refresh cannot be combined')
+        if args.offline and args.refresh_radio:
+            raise ValueError('--offline and --refresh-radio cannot be combined')
         tz = ZoneInfo(args.timezone)
         start = datetime.combine(args.date, time(), tz) if args.date else datetime.now(tz)
         end = start + timedelta(days=args.days)
@@ -348,12 +360,21 @@ def main(argv=None):
         ranked = sorted(rows, key=lambda r: (-r['max_elevation_deg'], r['range_at_peak_km']))
         for rank, row in enumerate(ranked, 1):
             row['rank'] = rank
+        radio = None
+        if args.radio or args.refresh_radio or args.radio_file:
+            from radio_metadata import load_radio_metadata
+            radio = load_radio_metadata(
+                satellites.keys(), args.cache_dir, offline=args.offline,
+                refresh=args.refresh_radio, band=args.band, radio_file=args.radio_file,
+                warn=warning)
         metadata = dict(location=dict(lat=args.lat, lon=args.lon, altitude_m=args.altitude), timezone=args.timezone,
             start=start.isoformat(), end=end.isoformat(), horizon_deg=args.horizon, minimum_peak_deg=args.min_elevation,
             ranking='Peak elevation descending, then range at peak ascending; geometric opportunity, NOT predicted SNR or transmitter status.',
             sources=sources, passes=rows)
+        if radio is not None:
+            metadata['radio'] = radio
         from terminal_view import render
-        render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts)
+        render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts, radio=radio)
         for path in (args.json_path, args.csv_path):
             if path:
                 path.parent.mkdir(parents=True, exist_ok=True)

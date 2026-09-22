@@ -79,7 +79,7 @@ def stamp(row, key, tz):
     return datetime.fromisoformat(row[key]).astimezone(tz)
 
 
-def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts):
+def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts, radio=None):
     width = max(40, min(100, shutil.get_terminal_size((80,24)).columns))
     colors = Colors(args.color)
     def paragraph(text, rgb=None):
@@ -145,5 +145,34 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
     heading('\nORBITAL DATA')
     for s in sources:
         paragraph(f"{s['satellite']} epoch: {s['epoch_utc']} (UTC)")
+    if radio is not None:
+        heading('\nRADIO CATALOG (PUBLISHED DATA; NOT LIVE STATUS)')
+        if radio.get('band_mhz'):
+            paragraph(f"Downlinks overlapping {radio['band_mhz'][0]:g}-{radio['band_mhz'][1]:g} MHz")
+        for norad, records in radio.get('satellites', {}).items():
+            label = next((s['satellite'] for s in sources if str(s['norad']) == str(norad)), str(norad))
+            if not records:
+                info = radio.get('availability', {}).get(str(norad), {})
+                status = info.get('status', 'unavailable')
+                fetched = f"; fetched {info['fetched_at_utc']}" if info.get('fetched_at_utc') else ''
+                paragraph(f'{label}: ' + ('catalog has no transmitter records' if status == 'empty' else 'radio metadata unavailable') + fetched)
+                continue
+            paragraph(f'{label}:')
+            for tx in records:
+                low, high = tx.get('downlink_low_hz'), tx.get('downlink_high_hz')
+                if low is None:
+                    frequency = 'frequency unknown'
+                elif low == high:
+                    frequency = f'{low / 1_000_000:g} MHz'
+                else:
+                    frequency = f'{low / 1_000_000:g}-{high / 1_000_000:g} MHz'
+                baud = tx.get('baud')
+                baud_text = 'baud unknown' if baud is None else f'{baud:g} baud'
+                description = tx.get('description', 'unknown')
+                catalog_status = tx.get('catalog_transmitter_status', 'unknown')
+                fetched = tx.get('fetched_at_utc', radio.get('fetched_at_utc', 'unknown'))
+                transmitter_id = tx.get('transmitter_id', 'unknown')
+                paragraph(f"  {transmitter_id} {description} | {frequency} | mode {tx.get('expected_mode', 'unknown')} | {baud_text} | protocol {tx.get('protocol', 'unknown')} | catalog status {catalog_status} | fetched {fetched} | published catalog; not live")
+        paragraph(f"Source: {radio.get('attribution', 'radio catalog')}; license: {radio.get('license', 'unknown')}. Catalog data is not a live transmitter claim.")
     paragraph('Verify active transmitter frequency/mode against AMSAT or SatNOGS before the pass (METEOR LRPT starting tune: 137.900 MHz / 72k). Refresh orbital data before receiving.')
     paragraph('Use --plots 3 for more sky paths; --plot-rank 2 for a specific ranked pass; --no-plot for schedule only.')

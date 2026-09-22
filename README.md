@@ -18,8 +18,8 @@ kept entirely outside the repository.
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
 <img alt="Skyfield 1.55" src="https://img.shields.io/badge/skyfield-1.55%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.2.0" src="https://img.shields.io/badge/nextpass-v1.2.0-0f766e?style=for-the-badge">
-<img alt="21 tests passing" src="https://img.shields.io/badge/tests-21%20passing-2ea043?style=for-the-badge">
+<img alt="nextpass v1.3.0" src="https://img.shields.io/badge/nextpass-v1.3.0-0f766e?style=for-the-badge">
+<img alt="33 tests passing" src="https://img.shields.io/badge/tests-33%20passing-2ea043?style=for-the-badge">
 </p>
 <p>
 <img alt="Objects" src="https://img.shields.io/badge/objects-8%20tracked-0f766e?style=flat-square">
@@ -43,6 +43,21 @@ cd nextpass
 Python 3.9+. On first use the launcher builds `.venv` and installs Skyfield; the
 first run also downloads orbital data. You'll get a ranked list of opportunities, a
 day-by-day schedule, and a sky plot of the best pass.
+
+To install the command with pip, create an environment and install this directory:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install .
+nextpass --version
+nextpass --days 7
+```
+
+Installed runs cache orbital elements in `$XDG_CACHE_HOME/nextpass` when
+`XDG_CACHE_HOME` is set, or `~/.cache/nextpass` otherwise. The source launcher
+uses the same default. To keep a source checkout's cache inside the repository,
+pass `--cache-dir .cache`.
 
 > [!IMPORTANT]
 > There is **no location in the code**. Create `~/.config/radio/location.json`
@@ -99,6 +114,10 @@ all eight.
 ./predict.sh --days 3 --horizon 0                                # geometric AOS/LOS
 ./predict.sh --days 3 --refresh                                  # force fresh orbits
 ./predict.sh --days 3 --offline                                  # use cache only
+./predict.sh --days 3 --radio --band 137-138                    # optional SatNOGS transmitter catalog
+./predict.sh --days 3 --radio --offline                         # use cached radio catalog only
+./predict.sh --days 3 --radio-file radio-overrides.json         # local radio metadata, no network
+./predict.sh --days 3 --refresh-radio                           # refresh the optional catalog
 ./predict.sh --help
 ```
 
@@ -157,6 +176,41 @@ collapse to compact pass cards in narrow windows — 80 columns or wider is best
 
 Pass rank is recomputed for the selected dates and filters, so use identical arguments
 (and a fixed `--date`) when acting on a rank an earlier run printed.
+
+</details>
+
+<details>
+<summary><b>📻 Optional radio metadata</b></summary>
+
+<br>
+
+Pass `--radio` to add published transmitter metadata from the official SatNOGS DB
+API. The request is opt-in; ordinary pass predictions never contact SatNOGS. The
+metadata is cached as `radio.json` beneath the same XDG cache directory as orbital
+data, with an atomic write and a one-day freshness window. `--refresh-radio` forces
+a refresh, while `--offline` prevents all network access and uses that cache. A
+failed refresh falls back to a valid cache. `--band 137-138` filters downlinks by
+an overlapping MHz range.
+
+SatNOGS records are catalog observations, not live transmitter state. The terminal
+and JSON exports label them `catalog-status-not-live`; modes and baud values are
+shown only when documented by the source, and protocol remains `unknown` unless
+explicitly supplied. Multiple transmitter records are retained independently, with
+no “most probable” choice. JSON exports include SatNOGS attribution and the
+CC BY-SA 4.0 license provenance.
+
+For an offline supplement or override, pass a local JSON array (or an object with
+`results`/`transmitters`) to `--radio-file`:
+
+```json
+[{"norad_cat_id": 57166, "frequency_mhz": 137.9,
+  "expected_mode": "LRPT", "baud": 72000,
+  "protocol": "explicitly documented local note"}]
+```
+
+Local values are labeled user-provided and do not imply that the satellite is
+currently transmitting. Confirm current frequency and activity against the source
+before receiving.
 
 </details>
 
@@ -223,9 +277,10 @@ Tests pass a neutral location explicitly and never touch your config.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Twenty-one tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
+Thirty-three tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
 exports, satellite selection, OMM validation, cache recovery, element-file skipping,
-concurrent refreshes and stale-data rejection, with no network access. Geometry tests
+concurrent refreshes and stale-data rejection, plus mocked radio metadata schema,
+cache, offline, band and local-override behavior, with no live network access. Geometry tests
 use saved real METEOR elements; all-catalog plumbing uses explicitly synthetic elements.
 Dense time sampling checks event detection independently of the event finder, while
 sharing its SGP4 propagator. Saved reference cases add an independent comparison using
