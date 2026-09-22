@@ -1,0 +1,25 @@
+# Local/private configuration, generated reports, IQ and environments
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env*
+location*.json
+*.local.*
+private/
+history/
+scans/
+outputs/
+reports/
+*.cs8
+*.cs16
+*.cf32
+*.sigmf-*
+*.csv
+*.json
+*.png
+*.html
+*passes*.txt
+*predictions*.txt
+!examples/elements-*.json
