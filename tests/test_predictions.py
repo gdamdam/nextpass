@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import io
 import json
 import os
@@ -7,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +68,61 @@ class PredictionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'No valid cached'):
                 app.load_elements(57166,Path(directory),offline=True)
 
+    def test_validation_requires_complete_omm_and_rejects_bad_cache(self):
+        elements = json.loads((ROOT/'examples/elements-2026-09-21.json').read_text())
+        incomplete = copy.deepcopy(elements[0]); del incomplete['BSTAR']
+        with self.assertRaisesRegex(ValueError, 'BSTAR'):
+            app.validate([incomplete], 57166)
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache/'57166.json').write_text(json.dumps([incomplete]))
+            with patch.object(app, 'urlopen', side_effect=OSError('offline')):
+                with self.assertRaisesRegex(ValueError, 'Cannot fetch'):
+                    app.load_elements(57166, cache)
+
+    def test_corrupt_cache_recovers_from_download_and_leaves_no_temp_file(self):
+        elements = json.loads((ROOT/'examples/elements-2026-09-21.json').read_text())
+
+        class Response(io.StringIO):
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache/'57166.json').write_text('{not json')
+            replaced = []
+            real_replace = os.replace
+            def capture_replace(source, target):
+                replaced.append(Path(source).name)
+                return real_replace(source, target)
+            with patch.object(app, 'urlopen', side_effect=[Response(json.dumps(elements)), Response(json.dumps(elements))]), \
+                    patch.object(app.os, 'replace', side_effect=capture_replace):
+                data, source = app.load_elements(57166, cache, refresh=True)
+                app.load_elements(57166, cache, refresh=True)
+            self.assertEqual(app.validate(data, 57166)['NORAD_CAT_ID'], 57166)
+            self.assertIn('celestrak.org', source)
+            self.assertEqual(len(set(replaced)), 2)
+            self.assertEqual(list(cache.glob('*.tmp')), [])
+
+    def test_invalid_download_keeps_valid_cache_and_falls_back(self):
+        elements = json.loads((ROOT/'examples/elements-2026-09-21.json').read_text())
+
+        class Response(io.StringIO):
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            cached = [elements[0]]
+            cache.mkdir(exist_ok=True)
+            (cache/'57166.json').write_text(json.dumps(cached))
+            invalid = copy.deepcopy(cached[0]); del invalid['BSTAR']
+            with patch.object(app, 'urlopen', return_value=Response(json.dumps([invalid]))):
+                data, source = app.load_elements(57166, cache, refresh=True)
+            self.assertEqual(data, cached)
+            self.assertTrue(source.startswith('fallback cache:'))
+            self.assertEqual(json.loads((cache/'57166.json').read_text()), cached)
+
     def test_satellite_selection_by_label_group_and_norad(self):
         self.assertEqual(app.select(None), app.SATELLITES)
         self.assertEqual(app.select('iss'), {25544:'ISS'})
@@ -88,6 +145,48 @@ class PredictionTests(unittest.TestCase):
         code, out, err = self.run_cli('--days','1','--date','2026-09-21','--satellites','meteor')
         self.assertEqual(code, 0)
         self.assertNotIn('no element set', err)
+
+    def test_null_elements_file_and_empty_or_unusable_selection_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            null_elements = Path(directory) / 'null.json'
+            null_elements.write_text('null')
+            code, _out, err = self.run_cli('--elements', str(null_elements), '--satellites', 'meteor')
+            self.assertEqual(code, 2)
+            self.assertIn('--elements must contain', err)
+        self.assertEqual(self.run_cli('--satellites', ',')[0], 2)
+        code, _out, err = self.run_cli('--satellites', 'iss')
+        self.assertEqual(code, 2)
+        self.assertIn('No selected satellites', err)
+
+    def test_dst_interval_preserves_local_timezone_offsets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'dst.json'
+            code, _out, err = self.run_cli('--date', '2026-10-31', '--days', '3',
+                                            '--allow-stale', '--satellites', 'meteor',
+                                            '--timezone', 'America/Los_Angeles',
+                                            '--no-plot', '--json', str(output))
+            self.assertEqual(code, 0, err)
+            data = json.loads(output.read_text())
+            self.assertTrue(data['start'].endswith('-07:00'))
+            self.assertTrue(data['end'].endswith('-08:00'))
+
+    def test_all_catalog_entries_accept_omm_fixture_shape(self):
+        base = json.loads((ROOT/'examples/elements-2026-09-21.json').read_text())[0]
+        expanded = []
+        for norad, (label, _group, object_name) in app.CATALOG.items():
+            row = copy.deepcopy(base)
+            row.update({'NORAD_CAT_ID': norad, 'OBJECT_NAME': object_name,
+                        'OBJECT_ID': f'2023-{norad:03d}A'})
+            expanded.append(row)
+        with tempfile.TemporaryDirectory() as directory:
+            elements = Path(directory) / 'all.json'
+            output = Path(directory) / 'all-results.json'
+            elements.write_text(json.dumps(expanded))
+            code, _out, err = self.run_cli('--elements', str(elements), '--date', '2026-09-21',
+                                            '--days', '1', '--no-plot', '--json', str(output))
+            self.assertEqual(code, 0, err)
+            data = json.loads(output.read_text())
+            self.assertEqual({row['norad'] for row in data['sources']}, set(app.CATALOG))
 
     def test_unreadable_location_config(self):
         if os.geteuid() == 0:

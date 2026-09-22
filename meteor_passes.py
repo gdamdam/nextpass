@@ -6,6 +6,8 @@ import json
 import math
 import os
 import sys
+import tempfile
+import re
 from datetime import datetime, timedelta, time, timezone, date
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -26,12 +28,31 @@ CATALOG = {
 }
 GROUPS = ('meteor', 'stations', 'amateur')
 SATELLITES = {cat: entry[0] for cat, entry in CATALOG.items()}
+APP_VERSION = '1.1.0'
+
+# Required by Skyfield's EarthSatellite.from_omm().
+OMM_REQUIRED_FIELDS = (
+    'OBJECT_NAME', 'OBJECT_ID', 'EPOCH', 'MEAN_MOTION', 'ECCENTRICITY',
+    'INCLINATION', 'RA_OF_ASC_NODE', 'ARG_OF_PERICENTER', 'MEAN_ANOMALY',
+    'EPHEMERIS_TYPE', 'CLASSIFICATION_TYPE', 'NORAD_CAT_ID',
+    'ELEMENT_SET_NO', 'REV_AT_EPOCH', 'BSTAR', 'MEAN_MOTION_DOT',
+    'MEAN_MOTION_DDOT',
+)
+OMM_NUMERIC_FIELDS = (
+    'MEAN_MOTION', 'ECCENTRICITY', 'INCLINATION', 'RA_OF_ASC_NODE',
+    'ARG_OF_PERICENTER', 'MEAN_ANOMALY', 'EPHEMERIS_TYPE', 'NORAD_CAT_ID',
+    'ELEMENT_SET_NO', 'REV_AT_EPOCH', 'BSTAR', 'MEAN_MOTION_DOT',
+    'MEAN_MOTION_DDOT',
+)
+OMM_INTEGER_FIELDS = ('EPHEMERIS_TYPE', 'NORAD_CAT_ID', 'ELEMENT_SET_NO', 'REV_AT_EPOCH')
 
 
 def select(spec):
     """Resolve a --satellites spec of labels, groups or NORAD IDs to {norad: label}."""
-    if not spec:
+    if spec is None:
         return dict(SATELLITES)
+    if not spec.strip():
+        raise ValueError('Satellite selection cannot be empty')
     chosen = {}
     for token in (piece.strip() for piece in spec.split(',')):
         if not token:
@@ -44,6 +65,8 @@ def select(spec):
                              + ', '.join(SATELLITES.values()) + '), groups ('
                              + ', '.join(GROUPS) + ') or NORAD IDs.')
         chosen.update(matched)
+    if not chosen:
+        raise ValueError('Satellite selection cannot be empty')
     return {cat: SATELLITES[cat] for cat in SATELLITES if cat in chosen}
 ROOT = Path(__file__).resolve().parent
 
@@ -52,12 +75,22 @@ def warning(message):
     print('WARNING: ' + message, file=sys.stderr)
 
 
-def load_elements(cat, cache, offline=False, refresh=False):
+def load_elements(cat, cache, offline=False, refresh=False, ts=None):
     path = cache / f'{cat}.json'
     cached = None
+    validation_ts = ts
+
+    def check_constructible(row):
+        nonlocal validation_ts
+        if validation_ts is None:
+            from skyfield.api import load
+            validation_ts = load.timescale(builtin=True)
+        validate_constructible(row, validation_ts)
+
     try:
         cached = json.loads(path.read_text())
-        validate(cached, cat)
+        row = validate(cached, cat)
+        check_constructible(row)
     except (OSError, ValueError, KeyError, TypeError):
         cached = None
     age = (datetime.now(timezone.utc).timestamp() - path.stat().st_mtime) if cached else math.inf
@@ -69,32 +102,88 @@ def load_elements(cat, cache, offline=False, refresh=False):
         return cached, f'cache: {path}'
     url = f'https://celestrak.org/NORAD/elements/gp.php?CATNR={cat}&FORMAT=JSON'
     try:
-        request = Request(url, headers={'User-Agent': 'nextpass/1.0'})
+        request = Request(url, headers={'User-Agent': f'nextpass/{APP_VERSION}'})
         with urlopen(request, timeout=25) as response:
             data = json.load(response)
-        validate(data, cat)
+        row = validate(data, cat)
+        check_constructible(row)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         if cached is None:
             raise ValueError(f'Cannot fetch {SATELLITES[cat]}: {exc}. Try again later or supply --elements JSON.') from exc
         warning(f'Fetch failed for {SATELLITES[cat]}; using cached elements ({exc}).')
         return cached, f'fallback cache: {path}'
     cache.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix('.tmp')
-    tmp.write_text(json.dumps(data, indent=2) + '\n')
-    tmp.replace(path)
+    fd, tmp_name = tempfile.mkstemp(prefix=f'.{cat}.', suffix='.tmp', dir=cache)
+    try:
+        with os.fdopen(fd, 'w') as tmp:
+            json.dump(data, tmp, indent=2)
+            tmp.write('\n')
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     return data, url
 
 
 def validate(data, cat):
     if not isinstance(data, list) or not data:
         raise ValueError('Expected a nonempty CelesTrak JSON array')
-    matches = [row for row in data if int(row['NORAD_CAT_ID']) == cat]
+    matches = [row for row in data if isinstance(row, dict) and _is_integer(row.get('NORAD_CAT_ID')) and int(row['NORAD_CAT_ID']) == cat]
     if len(matches) != 1:
         raise ValueError(f'Expected exactly one element set for NORAD {cat}')
-    for field in ('EPOCH', 'MEAN_MOTION', 'ECCENTRICITY', 'INCLINATION', 'RA_OF_ASC_NODE', 'ARG_OF_PERICENTER', 'MEAN_ANOMALY'):
-        if field not in matches[0]:
+    row = matches[0]
+    for field in OMM_REQUIRED_FIELDS:
+        if field not in row or row[field] is None:
             raise ValueError(f'Missing orbital field: {field}')
-    return matches[0]
+    if not isinstance(row['EPOCH'], str) or not row['EPOCH'].strip():
+        raise ValueError('Invalid orbital field: EPOCH')
+    try:
+        datetime.fromisoformat(row['EPOCH'].replace('Z', '+00:00'))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'Invalid orbital field: EPOCH ({exc})') from exc
+    for field in ('OBJECT_NAME', 'OBJECT_ID', 'CLASSIFICATION_TYPE'):
+        if not isinstance(row[field], str) or not row[field].strip():
+            raise ValueError(f'Invalid orbital field: {field}')
+    try:
+        values = {field: float(row[field]) for field in OMM_NUMERIC_FIELDS}
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f'Invalid numeric orbital field: {exc}') from exc
+    if any(not math.isfinite(value) for value in values.values()):
+        raise ValueError('Orbital fields must be finite numbers')
+    if values['MEAN_MOTION'] <= 0:
+        raise ValueError('MEAN_MOTION must be positive')
+    if not 0 <= values['ECCENTRICITY'] < 1:
+        raise ValueError('ECCENTRICITY must be in [0, 1)')
+    if not 0 <= values['INCLINATION'] <= 180:
+        raise ValueError('INCLINATION must be in [0, 180]')
+    if int(values['NORAD_CAT_ID']) != cat:
+        raise ValueError(f'Element set NORAD_CAT_ID does not match {cat}')
+    for field in OMM_INTEGER_FIELDS:
+        if not _is_integer(row[field]):
+            raise ValueError(f'{field} must be an integer')
+    return row
+
+
+def _is_integer(value):
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    if isinstance(value, str):
+        return bool(re.fullmatch(r'[+-]?\d+', value.strip()))
+    return isinstance(value, float) and math.isfinite(value) and value.is_integer()
+
+
+def validate_constructible(row, ts):
+    """Ensure Skyfield accepts the complete OMM row before it enters a cache."""
+    try:
+        from skyfield.api import EarthSatellite
+        EarthSatellite.from_omm(ts, row)
+    except Exception as exc:
+        raise ValueError(f'OMM element set cannot be loaded by Skyfield: {exc}') from exc
 
 
 def direction(degrees):
@@ -211,14 +300,18 @@ def main(argv=None):
         from skyfield.api import EarthSatellite, load, wgs84
         ts = load.timescale(builtin=True)
         observer = wgs84.latlon(args.lat, args.lon, elevation_m=args.altitude)
-        provided = json.loads(args.elements.read_text()) if args.elements else None
+        provided = None
+        if args.elements:
+            provided = json.loads(args.elements.read_text())
+            if not isinstance(provided, list) or not provided:
+                raise ValueError('--elements must contain a nonempty CelesTrak JSON array')
         rows, sources, satellites = [], [], {}
         selected = select(args.satellites)
         for cat, name in selected.items():
-            if provided is not None and not [row for row in provided if int(row['NORAD_CAT_ID']) == cat]:
+            if provided is not None and not [row for row in provided if isinstance(row, dict) and _is_integer(row.get('NORAD_CAT_ID')) and int(row['NORAD_CAT_ID']) == cat]:
                 warning(f'{name}: no element set for NORAD {cat} in {args.elements}; skipping.')
                 continue
-            data, source = (provided, str(args.elements)) if provided is not None else load_elements(cat, args.cache_dir, args.offline, args.refresh)
+            data, source = (provided, str(args.elements)) if provided is not None else load_elements(cat, args.cache_dir, args.offline, args.refresh, ts=ts)
             sat = EarthSatellite.from_omm(ts, validate(data, cat))
             satellites[cat] = sat
             max_age = max(abs(float(ts.from_datetime(d)-sat.epoch)) for d in (start, end))
@@ -228,6 +321,8 @@ def main(argv=None):
                 warning(f'{name}: date range extends {max_age:.1f} days from epoch; refresh nearer the pass. Predictions may be inaccurate.')
             sources.append(dict(satellite=name, norad=cat, source=source, epoch_utc=sat.epoch.utc_datetime().isoformat(timespec='seconds'), max_epoch_distance_days=round(max_age, 2)))
             rows.extend(predict(sat, observer, ts, start, end, tz, args.horizon, args.min_elevation))
+        if not satellites:
+            raise ValueError('No selected satellites have usable orbital elements')
         if hour_filter:
             a, b = hour_filter
             def allowed(row):

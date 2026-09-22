@@ -18,7 +18,8 @@ kept entirely outside the repository.
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
 <img alt="Skyfield 1.55" src="https://img.shields.io/badge/skyfield-1.55%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="10 tests passing" src="https://img.shields.io/badge/tests-10%20passing-2ea043?style=for-the-badge">
+<img alt="nextpass v1.1.0" src="https://img.shields.io/badge/nextpass-v1.1.0-0f766e?style=for-the-badge">
+<img alt="17 tests passing" src="https://img.shields.io/badge/tests-17%20passing-2ea043?style=for-the-badge">
 </p>
 <p>
 <img alt="Objects" src="https://img.shields.io/badge/objects-8%20tracked-0f766e?style=flat-square">
@@ -222,9 +223,11 @@ Tests pass a neutral location explicitly and never touch your config.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Ten tests over pass-event geometry, calendar-boundary inclusion, filters, exports,
-satellite selection, element-file skipping and stale-data rejection — all against
-saved real orbital elements, with no network access.
+Seventeen tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
+exports, satellite selection, OMM validation, cache recovery, element-file skipping
+and stale-data rejection — all against saved real orbital elements, with no network
+access. The suite checks independent event and boundary invariants; it does not claim
+an absolute pass-time accuracy number without a trusted reference ephemeris dataset.
 
 ---
 
