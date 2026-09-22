@@ -3,7 +3,8 @@ import copy
 import io
 import json
 import os
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 import tempfile
@@ -44,7 +45,7 @@ class PredictionTests(unittest.TestCase):
                     self.assertAlmostEqual(altitude, 10, delta=.15)
                 self.assertGreaterEqual(r['max_elevation_deg'],20)
 
-    def test_export_ranking_hours_and_known_pass(self):
+    def test_export_ranking_hours_and_passes(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)/'passes.json'; csv = Path(directory)/'passes.csv'
             code, stdout, err = self.run_cli('--date','2026-09-21','--days','3','--hours','08:00-22:00','--json',str(output),'--csv',str(csv))
@@ -73,6 +74,9 @@ class PredictionTests(unittest.TestCase):
         incomplete = copy.deepcopy(elements[0]); del incomplete['BSTAR']
         with self.assertRaisesRegex(ValueError, 'BSTAR'):
             app.validate([incomplete], 57166)
+        invalid_epoch = copy.deepcopy(elements[0]); invalid_epoch['EPOCH'] = '2026-09-21T06:53:42+00:00'
+        with self.assertRaisesRegex(ValueError, 'cannot be loaded by Skyfield'):
+            app.validate_constructible(invalid_epoch, load.timescale(builtin=True))
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory)
             (cache/'57166.json').write_text(json.dumps([incomplete]))
@@ -102,6 +106,37 @@ class PredictionTests(unittest.TestCase):
             self.assertEqual(app.validate(data, 57166)['NORAD_CAT_ID'], 57166)
             self.assertIn('celestrak.org', source)
             self.assertEqual(len(set(replaced)), 2)
+            self.assertEqual(list(cache.glob('*.tmp')), [])
+
+    def test_concurrent_refreshes_use_independent_atomic_temp_files(self):
+        elements = json.loads((ROOT/'examples/elements-2026-09-21.json').read_text())
+
+        class Response(io.StringIO):
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            barrier = threading.Barrier(2)
+            errors = []
+            replace = os.replace
+            def synchronized_replace(source, destination):
+                barrier.wait(timeout=5)
+                return replace(source, destination)
+            def fetch(*_args, **_kwargs):
+                return Response(json.dumps(elements))
+            def refresh():
+                try:
+                    app.load_elements(57166, cache, refresh=True)
+                except BaseException as exc:
+                    errors.append(exc)
+            with patch.object(app, 'urlopen', side_effect=fetch), patch.object(app.os, 'replace', side_effect=synchronized_replace):
+                threads = [threading.Thread(target=refresh) for _ in range(2)]
+                for thread in threads: thread.start()
+                for thread in threads: thread.join(timeout=10)
+            self.assertTrue(all(not thread.is_alive() for thread in threads))
+            self.assertEqual(errors, [])
+            self.assertEqual(app.validate(json.loads((cache/'57166.json').read_text()), 57166)['NORAD_CAT_ID'], 57166)
             self.assertEqual(list(cache.glob('*.tmp')), [])
 
     def test_invalid_download_keeps_valid_cache_and_falls_back(self):
@@ -157,6 +192,44 @@ class PredictionTests(unittest.TestCase):
         code, _out, err = self.run_cli('--satellites', 'iss')
         self.assertEqual(code, 2)
         self.assertIn('No selected satellites', err)
+
+    def test_version_and_hours_reject_offsets(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with self.assertRaises(SystemExit) as raised:
+                app.parser().parse_args(['--version'])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn('1.1.0', output.getvalue())
+        code, _out, err = self.run_cli('--hours', '08:00+01:00-22:00')
+        self.assertEqual(code, 2)
+        self.assertIn('without timezone offsets', err)
+
+    def test_peak_matches_dense_reference_sampling(self):
+        ts = load.timescale(builtin=True)
+        observer = wgs84.latlon(0, 0, elevation_m=0)
+        tz = ZoneInfo('UTC')
+        row = json.loads((ROOT/'examples/elements-2026-09-21.json').read_text())[0]
+        satellite = EarthSatellite.from_omm(ts, row)
+        start = datetime(2026, 9, 21, tzinfo=tz)
+        passes = app.predict(satellite, observer, ts, start, start.replace(day=22), tz, 10, 20)
+        self.assertTrue(passes)
+        # Sample a full day without find_events, sharing only the propagator.
+        times = ts.linspace(ts.from_datetime(start), ts.from_datetime(start + timedelta(days=1)), 8641)
+        elevations = (satellite - observer).at(times).altaz()[0].degrees
+        sampled_peaks, segment = [], []
+        for index, elevation in enumerate(elevations):
+            if elevation >= 10:
+                segment.append(index)
+            elif segment:
+                best = max(segment, key=lambda i: elevations[i])
+                if elevations[best] >= 20:
+                    sampled_peaks.append(best)
+                segment = []
+        self.assertEqual(len(passes), len(sampled_peaks))
+        for predicted, index in zip(passes, sampled_peaks):
+            peak = datetime.fromisoformat(predicted['peak'])
+            self.assertLess(abs((peak - times[index].utc_datetime()).total_seconds()), 11)
+            self.assertAlmostEqual(predicted['max_elevation_deg'], elevations[index], delta=0.1)
 
     def test_dst_interval_preserves_local_timezone_offsets(self):
         with tempfile.TemporaryDirectory() as directory:

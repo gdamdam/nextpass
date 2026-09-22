@@ -178,10 +178,19 @@ def _is_integer(value):
 
 
 def validate_constructible(row, ts):
-    """Ensure Skyfield accepts the complete OMM row before it enters a cache."""
+    """Ensure Skyfield accepts and propagates the OMM row before use or caching."""
     try:
         from skyfield.api import EarthSatellite
-        EarthSatellite.from_omm(ts, row)
+        satellite = EarthSatellite.from_omm(ts, row)
+        if satellite.model.satnum != int(row['NORAD_CAT_ID']):
+            raise ValueError('NORAD number changed during Skyfield construction')
+        state = satellite.at(satellite.epoch)
+        if state.message:
+            raise ValueError(f'Propagation failed: {state.message}')
+        values = tuple(state.position.km) + tuple(state.velocity.km_per_s)
+        if not values or any(not math.isfinite(float(value)) for value in values):
+            raise ValueError('non-finite state at orbital epoch')
+        return satellite
     except Exception as exc:
         raise ValueError(f'OMM element set cannot be loaded by Skyfield: {exc}') from exc
 
@@ -228,6 +237,7 @@ def predict(sat, observer, ts, start, end, tz, horizon, min_elevation):
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument('--version', action='version', version=f'%(prog)s {APP_VERSION}')
     p.add_argument('--date', type=date.fromisoformat, help='First local calendar date YYYY-MM-DD; omit to start now')
     p.add_argument('--days', type=int, default=7, help='Number of local calendar days; without --date, now to this time N days later')
     p.add_argument('--location-config', type=Path, default=Path(os.environ.get('RADIO_LOCATION_CONFIG', str(Path.home()/'.config/radio/location.json'))), help='Private location JSON, stored outside the repository')
@@ -295,8 +305,13 @@ def main(argv=None):
         end = start + timedelta(days=args.days)
         hour_filter = None
         if args.hours:
-            a, b = args.hours.split('-')
-            hour_filter = time.fromisoformat(a), time.fromisoformat(b)
+            parts = args.hours.split('-')
+            if len(parts) != 2:
+                raise ValueError('--hours must be HH:MM-HH:MM without timezone offsets')
+            a, b = time.fromisoformat(parts[0]), time.fromisoformat(parts[1])
+            if a.tzinfo is not None or b.tzinfo is not None:
+                raise ValueError('--hours must be HH:MM-HH:MM without timezone offsets')
+            hour_filter = a, b
         from skyfield.api import EarthSatellite, load, wgs84
         ts = load.timescale(builtin=True)
         observer = wgs84.latlon(args.lat, args.lon, elevation_m=args.altitude)
@@ -312,7 +327,7 @@ def main(argv=None):
                 warning(f'{name}: no element set for NORAD {cat} in {args.elements}; skipping.')
                 continue
             data, source = (provided, str(args.elements)) if provided is not None else load_elements(cat, args.cache_dir, args.offline, args.refresh, ts=ts)
-            sat = EarthSatellite.from_omm(ts, validate(data, cat))
+            sat = validate_constructible(validate(data, cat), ts)
             satellites[cat] = sat
             max_age = max(abs(float(ts.from_datetime(d)-sat.epoch)) for d in (start, end))
             if max_age > 14 and not args.allow_stale:
