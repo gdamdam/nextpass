@@ -170,14 +170,25 @@ def main(argv=None):
     p = parser(); args = p.parse_args(argv)
     try:
         config = {}
-        if args.location_config.expanduser().exists():
-            config = json.loads(args.location_config.expanduser().read_text())
-            if not isinstance(config, dict):
-                raise ValueError('Location config must be a JSON object')
+        location_path = args.location_config.expanduser()
+        config_error = None
+        try:
+            if location_path.exists():
+                config = json.loads(location_path.read_text())
+                if not isinstance(config, dict):
+                    raise ValueError('Location config must be a JSON object')
+        except OSError as exc:
+            # An unreadable config is only fatal when the command line does not already
+            # supply every field; explicit --lat/--lon should not depend on the file.
+            # Malformed JSON still raises, so a corrupt config stays loud.
+            config_error = exc
+            warning(f'Cannot read {location_path}: {exc}. Falling back to command-line location options.')
         for key in ('lat', 'lon', 'altitude', 'timezone'):
             if getattr(args, key) is None:
                 setattr(args, key, config.get(key))
         if any(getattr(args, key) is None for key in ('lat', 'lon', 'altitude', 'timezone')):
+            if config_error is not None:
+                raise ValueError(f'Location missing and {location_path} could not be read ({config_error}). Fix its permissions, or pass --lat, --lon, --altitude and --timezone.')
             raise ValueError('Location missing. Create ~/.config/radio/location.json with lat, lon, altitude, timezone; see README.md. No location is embedded in the code.')
         args.lat, args.lon, args.altitude = float(args.lat), float(args.lon), float(args.altitude)
         if args.plots < 0 or (args.plot_rank is not None and args.plot_rank < 1):

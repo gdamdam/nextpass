@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -87,5 +88,26 @@ class PredictionTests(unittest.TestCase):
         code, out, err = self.run_cli('--days','1','--date','2026-09-21','--satellites','meteor')
         self.assertEqual(code, 0)
         self.assertNotIn('no element set', err)
+
+    def test_unreadable_location_config(self):
+        if os.geteuid() == 0:
+            self.skipTest('root bypasses file permissions')
+        with tempfile.TemporaryDirectory() as directory:
+            blocked = Path(directory)/'location.json'
+            blocked.write_text('{"lat":1,"lon":2,"altitude":3,"timezone":"UTC"}')
+            blocked.chmod(0o000)
+            try:
+                # Explicit coordinates make an unreadable config a warning, not an error.
+                code, _out, err = self.run_cli('--location-config',str(blocked),'--days','1','--date','2026-09-21','--satellites','meteor')
+                self.assertEqual(code, 0)
+                self.assertIn('Cannot read', err)
+                # With nothing on the command line it stays fatal, and says why.
+                out2, err2 = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(out2), contextlib.redirect_stderr(err2):
+                    code2 = app.main(['--location-config',str(blocked),'--elements',str(ROOT/'examples/elements-2026-09-21.json'),'--days','1'])
+                self.assertEqual(code2, 2)
+                self.assertIn('could not be read', err2.getvalue())
+            finally:
+                blocked.chmod(0o600)
 
 if __name__=='__main__': unittest.main()
