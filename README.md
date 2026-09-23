@@ -25,8 +25,6 @@ kept entirely outside the repository.
 <p>
 <img alt="Objects" src="https://img.shields.io/badge/objects-8%20tracked-0f766e?style=flat-square">
 <img alt="Data" src="https://img.shields.io/badge/data-CelesTrak%20GP%2FOMM-b45309?style=flat-square">
-<img alt="Output" src="https://img.shields.io/badge/output-ANSI%20sky%20plots%20·%20JSON%20·%20CSV-334155?style=flat-square">
-<img alt="Coordinates" src="https://img.shields.io/badge/coordinates-never%20in%20this%20repo-be123c?style=flat-square">
 </p>
 
 </div>
