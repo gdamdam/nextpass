@@ -378,3 +378,8 @@ Sources: [Skyfield](https://rhodesmill.org/skyfield/earth-satellites.html) ·
 [CelesTrak GP formats](https://celestrak.org/NORAD/documentation/gp-data-formats.php) ·
 [AMSAT status](https://www.amsat.org/status/) ·
 [SatNOGS DB](https://db.satnogs.org/)
+
+## License
+
+Licensed under the GNU General Public License, version 3 only
+(`GPL-3.0-only`). See [LICENSE](LICENSE).
