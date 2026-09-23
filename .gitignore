@@ -28,3 +28,6 @@ reports/
 !examples/elements-*.json
 !tests/fixtures/
 !tests/fixtures/pyephem-reference-*.json
+
+*.ics
+*.bsp

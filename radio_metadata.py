@@ -11,7 +11,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 
@@ -130,6 +130,10 @@ def normalize_transmitter(row, norad_hint=None, source="SatNOGS DB", fetched_at=
             high *= 1_000_000
         if any(value is not None and not math.isfinite(value) for value in (low, high)):
             raise RadioMetadataError("radio downlink frequency is too large")
+        if low is None:
+            low = high
+        if high is None:
+            high = low
     if low is not None and high is not None and high < low:
         raise RadioMetadataError("radio downlink range has high below low")
     mode = _text(merged.get("expected_mode", merged.get("mode")))
@@ -254,17 +258,41 @@ def _read_cache(path):
 def _fetch_norad(norad, opener=None):
     query = urlencode({"format": "json", "satellite__norad_cat_id": norad})
     url = f"{SATNOGS_API}?{query}"
-    request = Request(url, headers={"Accept": "application/json", "User-Agent": "nextpass-radio/1.3.0"})
-    try:
-        opener = opener or urlopen
-        with opener(request, timeout=FETCH_TIMEOUT) as response:
-            payload = json.load(response)
-    except (OSError, ValueError, TypeError) as exc:
-        raise RadioMetadataError(f"SatNOGS fetch failed for NORAD {norad}: {exc}") from exc
-    rows = _rows(payload)
+    opener = opener or urlopen
+    origin = urlsplit(SATNOGS_API)
+    pages = []
+    visited = set()
+    next_url = url
+    for page_number in range(100):
+        parsed = urlsplit(next_url)
+        if (parsed.scheme, parsed.netloc) != (origin.scheme, origin.netloc):
+            raise RadioMetadataError("SatNOGS pagination link left the official origin")
+        if next_url in visited:
+            raise RadioMetadataError("SatNOGS pagination cycle detected")
+        visited.add(next_url)
+        request = Request(next_url, headers={"Accept": "application/json", "User-Agent": "nextpass-radio/1.4.0"})
+        try:
+            with opener(request, timeout=FETCH_TIMEOUT) as response:
+                final_url = response.geturl() if hasattr(response, "geturl") else next_url
+                final = urlsplit(final_url)
+                if (final.scheme, final.netloc) != (origin.scheme, origin.netloc):
+                    raise RadioMetadataError("SatNOGS response redirected outside the official origin")
+                payload = json.load(response)
+        except RadioMetadataError:
+            raise
+        except (OSError, ValueError, TypeError) as exc:
+            raise RadioMetadataError(f"SatNOGS fetch failed for NORAD {norad}: {exc}") from exc
+        pages.extend(_rows(payload))
+        next_link = payload.get("next") if isinstance(payload, dict) else None
+        if not next_link:
+            break
+        next_url = urljoin(next_url, next_link)
+    else:
+        raise RadioMetadataError("SatNOGS pagination exceeded the 100-page limit")
+
     fetched_at = utc_now()
     records = []
-    for row in rows:
+    for row in pages:
         # Verify the row's own NORAD value; an ignored server-side filter must
         # never relabel a record as the requested satellite.
         normalized = normalize_transmitter(row, fetched_at=fetched_at)
@@ -368,14 +396,30 @@ def load_radio_metadata(norads, cache_dir, *, offline=False, refresh=False, band
     availability = {}
     for norad in norads:
         entry = coverage.get(str(norad))
-        if entry is None:
+        local_records = [row for row in records if row.get("norad") == norad]
+        selected_records = selected[str(norad)]
+        if selected_records:
+            availability[str(norad)] = {"status": "available", "count": len(selected_records)}
+            if entry and entry.get("fetched_at_utc"):
+                availability[str(norad)]["fetched_at_utc"] = entry["fetched_at_utc"]
+        elif band is not None and (local_records or (entry and entry.get("count", 0) > 0)):
+            availability[str(norad)] = {"status": "filtered", "reason": "no transmitter records match the requested band",
+                                         "count": 0}
+            if entry and entry.get("fetched_at_utc"):
+                availability[str(norad)]["fetched_at_utc"] = entry["fetched_at_utc"]
+        elif local_records:
+            availability[str(norad)] = {"status": "empty", "reason": "no transmitter records available locally",
+                                         "count": 0}
+            if entry and entry.get("fetched_at_utc"):
+                availability[str(norad)]["fetched_at_utc"] = entry["fetched_at_utc"]
+        elif entry is None:
             availability[str(norad)] = {"status": "unavailable", "reason": "not covered by this cache/fetch"}
         elif entry.get("count", 0) == 0:
             availability[str(norad)] = {"status": "empty", "reason": "catalog returned no transmitter records",
                                          "fetched_at_utc": entry.get("fetched_at_utc")}
         else:
-            availability[str(norad)] = {"status": "available", "count": entry.get("count"),
-                                         "fetched_at_utc": entry.get("fetched_at_utc")}
+            availability[str(norad)] = {"status": "empty", "reason": "catalog records are not present locally",
+                                         "count": 0, "fetched_at_utc": entry.get("fetched_at_utc")}
     return {
         "schema": 1,
         "source": "SatNOGS DB" if cache or any(row.get("source") == "SatNOGS DB" for row in records) else "local radio file",

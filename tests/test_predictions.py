@@ -199,7 +199,7 @@ class PredictionTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as raised:
                 app.parser().parse_args(['--version'])
         self.assertEqual(raised.exception.code, 0)
-        self.assertIn('1.3.0', output.getvalue())
+        self.assertIn(app.APP_VERSION, output.getvalue())
         code, _out, err = self.run_cli('--hours', '08:00+01:00-22:00')
         self.assertEqual(code, 2)
         self.assertIn('without timezone offsets', err)

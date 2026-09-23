@@ -13,7 +13,7 @@ requires-python = ">=3.9"
 nextpass = "meteor_passes:main"
 
 [tool.setuptools]
-py-modules = ["meteor_passes", "terminal_view", "radio_metadata"]
+py-modules = ["meteor_passes", "terminal_view", "radio_metadata", "planning_features"]
 
 [tool.setuptools.dynamic]
 version = {attr = "meteor_passes.APP_VERSION"}

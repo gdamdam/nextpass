@@ -123,6 +123,8 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
             value = f"{r['max_elevation_deg']:.1f} deg"
             print(line.replace(value,colors.elevation(value,r['max_elevation_deg'])))
             paragraph(f"  {a:%H:%M:%S} -> {b:%H:%M:%S} | {r['window_minutes']:.1f} min | {path}")
+        if 'visible_at_peak' in r:
+            paragraph(f"  At peak: satellite {'sunlit' if r['satellite_sunlit_at_peak'] else 'in shadow'}; Sun {r['sun_altitude_at_peak_deg']:.1f} deg; visual candidate {'yes' if r['visible_at_peak'] else 'no'}.")
         if a.date()!=peak.date() or b.date()!=peak.date() or a.utcoffset()!=b.utcoffset():
             paragraph(f'  Full window: {a:%Y-%m-%d %H:%M:%S %Z} -> {b:%Y-%m-%d %H:%M:%S %Z}')
     if not rows:
@@ -145,7 +147,9 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
     heading('\nORBITAL DATA')
     for s in sources:
         paragraph(f"{s['satellite']} epoch: {s['epoch_utc']} (UTC)")
-    if radio is not None:
+    if radio is not None and radio.get('status') == 'unavailable':
+        paragraph('Radio metadata unavailable; geometric predictions are unaffected.')
+    if radio is not None and radio.get('status') != 'unavailable':
         heading('\nRADIO CATALOG (PUBLISHED DATA; NOT LIVE STATUS)')
         if radio.get('band_mhz'):
             paragraph(f"Downlinks overlapping {radio['band_mhz'][0]:g}-{radio['band_mhz'][1]:g} MHz")
@@ -155,7 +159,7 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
                 info = radio.get('availability', {}).get(str(norad), {})
                 status = info.get('status', 'unavailable')
                 fetched = f"; fetched {info['fetched_at_utc']}" if info.get('fetched_at_utc') else ''
-                paragraph(f'{label}: ' + ('catalog has no transmitter records' if status == 'empty' else 'radio metadata unavailable') + fetched)
+                paragraph(f'{label}: ' + ('catalog has no transmitter records' if status == 'empty' else 'no downlinks match the requested band' if status == 'filtered' else 'radio metadata unavailable') + fetched)
                 continue
             paragraph(f'{label}:')
             for tx in records:

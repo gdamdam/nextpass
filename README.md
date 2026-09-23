@@ -18,8 +18,8 @@ kept entirely outside the repository.
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
 <img alt="Skyfield 1.55" src="https://img.shields.io/badge/skyfield-1.55%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.3.0" src="https://img.shields.io/badge/nextpass-v1.3.0-0f766e?style=for-the-badge">
-<img alt="33 tests passing" src="https://img.shields.io/badge/tests-33%20passing-2ea043?style=for-the-badge">
+<img alt="nextpass v1.4.0" src="https://img.shields.io/badge/nextpass-v1.4.0-0f766e?style=for-the-badge">
+<img alt="51 tests passing" src="https://img.shields.io/badge/tests-51%20passing-2ea043?style=for-the-badge">
 </p>
 <p>
 <img alt="Objects" src="https://img.shields.io/badge/objects-8%20tracked-0f766e?style=flat-square">
@@ -68,7 +68,7 @@ pass `--cache-dir .cache`.
 
 ## 🛰 What it tracks
 
-Eight objects, in three groups. NORAD IDs were verified against the live CelesTrak
+Eight built-in objects, in three groups; extend or override them with `--catalog`. NORAD IDs were verified against the live CelesTrak
 catalog on 2026-09-22.
 
 | Label | Object | NORAD | Group | Why you'd chase it |
@@ -103,6 +103,22 @@ Labels, group names and NORAD IDs can be mixed freely and are case-insensitive.
 Duplicates collapse, and output always follows catalog order. Omit the flag to get
 all eight.
 
+### Extend the satellite catalog
+
+Use `--catalog catalog.json` to merge local entries with the built-in catalog:
+
+```json
+[{"norad": 25544, "label": "ISS", "group": "favorites", "name": "ISS (ZARYA)"}]
+```
+
+Each entry requires an integer `norad` and nonempty `label`, `group`, and `name`.
+An existing NORAD ID replaces that entry; a new ID adds a satellite without editing
+Python. Labels must be unique ignoring case; labels and groups cannot contain commas
+or control characters. Custom labels, groups and IDs work with `--satellites`.
+For example, `--catalog catalog.json --satellites favorites` selects the ISS above.
+New objects need matching CelesTrak data or an element row supplied via `--elements`.
+Omitting `--satellites` includes the merged catalog.
+
 ---
 
 ## 🎛 Everyday commands
@@ -126,6 +142,43 @@ Without `--date` the interval runs from now to the same local time N days later.
 handled by your timezone. Passes are included by **peak** time, so a window may begin
 before or end after the requested interval — `--hours` filters on peak time too, and
 overnight ranges like `20:00-06:00` work.
+
+### Calendar events and reminders
+
+```sh
+./predict.sh --days 7 --ics passes.ics
+./predict.sh --days 7 --ics passes.ics --reminder-minutes 30
+./predict.sh --days 7 --ics passes.ics --reminder-minutes 0  # no alarms
+```
+
+Import the file into your calendar app. Events span the configured reception window,
+include pass geometry, and default to a display alarm 15 minutes before the start.
+The calendar app delivers reminders; nextpass does not run in the background.
+Timestamps use UTC so calendar apps display them in the appropriate local timezone.
+Identical satellite/window times produce stable event IDs; recalculated window times
+produce new IDs, so replace an old imported calendar when updating predictions.
+Calendar exports contain observing times and should be kept private.
+
+### Visual-pass candidates
+
+```sh
+./predict.sh --satellites stations --days 3 --visibility
+./predict.sh --satellites stations --days 3 --visible-only
+./predict.sh --visible-only --max-sun-altitude -12 --ephemeris /path/to/de421.bsp
+```
+
+`--visibility` annotates each pass with satellite sunlight and the observer's Sun
+altitude **at peak**. `--visible-only` keeps peaks where the satellite is sunlit and
+the Sun is at or below -6° by default. Change the darkness threshold with
+`--max-sun-altitude`. Results describe peak conditions, not the entire pass; clouds,
+brightness and obstructions are not modeled. Daylight radio passes remain useful.
+
+These options require a planetary ephemeris. First online use downloads Skyfield's
+`de421.bsp` into the cache directory; ordinary radio predictions do not download it.
+`--ephemeris` uses an existing local BSP. Under `--offline`, a missing BSP produces
+an actionable error and no download. Choose a BSP covering the requested dates.
+JSON and CSV include the three visibility fields; CSV leaves them blank when this
+feature is disabled, and uses the same columns for empty and nonempty results.
 
 ---
 
@@ -189,8 +242,12 @@ API. The request is opt-in; ordinary pass predictions never contact SatNOGS. The
 metadata is cached as `radio.json` beneath the same XDG cache directory as orbital
 data, with an atomic write and a one-day freshness window. `--refresh-radio` forces
 a refresh, while `--offline` prevents all network access and uses that cache. A
-failed refresh falls back to a valid cache. `--band 137-138` filters downlinks by
-an overlapping MHz range.
+failed refresh falls back to a valid cache. If no radio cache is available, the
+CLI warns and still prints/exports the geometric predictions; JSON records radio
+unavailability. Malformed explicit local radio files remain errors. `--band 137-138` filters downlinks by
+an overlapping MHz range and requires `--radio`, `--refresh-radio`, or
+`--radio-file`. Paginated catalog responses are collected before cache coverage is
+recorded. Availability distinguishes missing metadata from records excluded by the band.
 
 SatNOGS records are catalog observations, not live transmitter state. The terminal
 and JSON exports label them `catalog-status-not-live`; modes and baud values are
@@ -277,10 +334,12 @@ Tests pass a neutral location explicitly and never touch your config.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Thirty-three tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
+Fifty-one tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
 exports, satellite selection, OMM validation, cache recovery, element-file skipping,
 concurrent refreshes and stale-data rejection, plus mocked radio metadata schema,
-cache, offline, band and local-override behavior, with no live network access. Geometry tests
+cache, offline, band, pagination and local-override behavior, plus calendar alarms,
+custom catalogs, peak visibility and CLI failure recovery, with no live network access.
+CI installs the package and runs the suite on Python 3.9, 3.11 and 3.13. Geometry tests
 use saved real METEOR elements; all-catalog plumbing uses explicitly synthetic elements.
 Dense time sampling checks event detection independently of the event finder, while
 sharing its SGP4 propagator. Saved reference cases add an independent comparison using

@@ -58,6 +58,74 @@ class RadioMetadataTests(unittest.TestCase):
                 }]))
             self.assertEqual([row["transmitter_id"] for row in result["satellites"]["57166"]], ["tx-1"])
 
+    def test_one_sided_mhz_bound_becomes_a_point_frequency(self):
+        low = radio.normalize_transmitter({"norad": 57166, "downlink_low_mhz": 137.9})
+        high = radio.normalize_transmitter({"norad": 57166, "downlink_high_mhz": 137.9})
+        self.assertEqual((low["downlink_low_hz"], low["downlink_high_hz"]), (137900000, 137900000))
+        self.assertEqual((high["downlink_low_hz"], high["downlink_high_hz"]), (137900000, 137900000))
+
+    def test_fetch_follows_same_origin_next_pages_before_recording_complete_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            calls = []
+            def opener(request, timeout):
+                calls.append(request.full_url)
+                if len(calls) == 1:
+                    return Response({"results": [{"uuid": "tx-1", "norad_cat_id": 57166}],
+                                     "next": "/api/transmitters/?page=2"})
+                return Response({"results": [{"uuid": "tx-2", "norad_cat_id": 57166}], "next": None})
+            result = radio.load_radio_metadata([57166], Path(directory), opener=opener)
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(all(url.startswith("https://db.satnogs.org/") for url in calls))
+            self.assertEqual(result["coverage"]["57166"]["count"], 2)
+            self.assertEqual([tx["transmitter_id"] for tx in result["satellites"]["57166"]], ["tx-1", "tx-2"])
+
+    def test_untrusted_pagination_link_does_not_mark_catalog_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "local.json"
+            path.write_text(json.dumps([{"norad": 57166, "frequency_mhz": 137.9}]))
+            calls = []
+            warnings = []
+            def opener(request, timeout):
+                calls.append(request.full_url)
+                return Response({"results": [], "next": "https://attacker.example/steal"})
+            result = radio.load_radio_metadata([57166], Path(directory), radio_file=path,
+                                               opener=opener, refresh=True, warn=warnings.append)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(result["coverage"], {})
+            self.assertIn("57166", result["availability"])
+            self.assertEqual(len(warnings), 1)
+
+    def test_pagination_cycle_stops_before_repeating_a_page(self):
+        calls = []
+        def opener(request, timeout):
+            calls.append(request.full_url)
+            return Response({"results": [], "next": request.full_url})
+        with self.assertRaisesRegex(radio.RadioMetadataError, "cycle"):
+            radio._fetch_norad(57166, opener=opener)
+        self.assertEqual(len(calls), 1)
+
+    def test_availability_uses_matching_local_records_without_changing_catalog_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "local.json"
+            path.write_text(json.dumps([{"norad": 57166, "frequency_mhz": 145.8}]))
+            result = radio.load_radio_metadata([57166], Path(directory), radio_file=path, band="137-138")
+            self.assertEqual(result["satellites"]["57166"], [])
+            self.assertEqual(result["availability"]["57166"]["status"], "filtered")
+            self.assertEqual(result["availability"]["57166"]["reason"],
+                             "no transmitter records match the requested band")
+            self.assertEqual(result["coverage"], {})
+
+    def test_band_filtered_catalog_availability_uses_local_match_count_and_keeps_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            radio.load_radio_metadata([57166], cache, opener=self.fake_opener([{
+                "uuid": "tx-1", "norad_cat_id": 57166, "downlink_low": 145800000,
+            }]))
+            result = radio.load_radio_metadata([57166], cache, offline=True, band="137-138")
+            self.assertEqual(result["availability"]["57166"]["status"], "filtered")
+            self.assertEqual(result["availability"]["57166"]["count"], 0)
+            self.assertEqual(result["coverage"]["57166"]["count"], 1)
+
     def test_malformed_api_has_no_cache_error(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(radio.RadioMetadataError):

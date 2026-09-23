@@ -28,7 +28,7 @@ CATALOG = {
 }
 GROUPS = ('meteor', 'stations', 'amateur')
 SATELLITES = {cat: entry[0] for cat, entry in CATALOG.items()}
-APP_VERSION = '1.3.0'
+APP_VERSION = '1.4.0'
 
 # Required by Skyfield's EarthSatellite.from_omm().
 OMM_REQUIRED_FIELDS = (
@@ -47,10 +47,13 @@ OMM_NUMERIC_FIELDS = (
 OMM_INTEGER_FIELDS = ('EPHEMERIS_TYPE', 'NORAD_CAT_ID', 'ELEMENT_SET_NO', 'REV_AT_EPOCH')
 
 
-def select(spec):
+def select(spec, catalog=None):
     """Resolve a --satellites spec of labels, groups or NORAD IDs to {norad: label}."""
+    catalog = CATALOG if catalog is None else catalog
+    labels = {cat: entry[0] for cat, entry in catalog.items()}
+    groups = sorted({entry[1] for entry in catalog.values()})
     if spec is None:
-        return dict(SATELLITES)
+        return labels
     if not spec.strip():
         raise ValueError('Satellite selection cannot be empty')
     chosen = {}
@@ -58,16 +61,16 @@ def select(spec):
         if not token:
             continue
         key = token.upper()
-        matched = {cat: label for cat, (label, group, _name) in CATALOG.items()
+        matched = {cat: label for cat, (label, group, _name) in catalog.items()
                    if key == label.upper() or key == group.upper() or token == str(cat)}
         if not matched:
             raise ValueError(f"Unknown satellite '{token}'. Choose labels ("
-                             + ', '.join(SATELLITES.values()) + '), groups ('
-                             + ', '.join(GROUPS) + ') or NORAD IDs.')
+                             + ', '.join(labels.values()) + '), groups ('
+                             + ', '.join(groups) + ') or NORAD IDs.')
         chosen.update(matched)
     if not chosen:
         raise ValueError('Satellite selection cannot be empty')
-    return {cat: SATELLITES[cat] for cat in SATELLITES if cat in chosen}
+    return {cat: labels[cat] for cat in labels if cat in chosen}
 
 
 def default_cache_dir():
@@ -80,7 +83,7 @@ def warning(message):
     print('WARNING: ' + message, file=sys.stderr)
 
 
-def load_elements(cat, cache, offline=False, refresh=False, ts=None):
+def load_elements(cat, cache, offline=False, refresh=False, ts=None, label=None):
     path = cache / f'{cat}.json'
     cached = None
     validation_ts = ts
@@ -114,8 +117,8 @@ def load_elements(cat, cache, offline=False, refresh=False, ts=None):
         check_constructible(row)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         if cached is None:
-            raise ValueError(f'Cannot fetch {SATELLITES[cat]}: {exc}. Try again later or supply --elements JSON.') from exc
-        warning(f'Fetch failed for {SATELLITES[cat]}; using cached elements ({exc}).')
+            raise ValueError(f'Cannot fetch {label or SATELLITES.get(cat, str(cat))}: {exc}. Try again later or supply --elements JSON.') from exc
+        warning(f'Fetch failed for {label or SATELLITES.get(cat, str(cat))}; using cached elements ({exc}).')
         return cached, f'fallback cache: {path}'
     cache.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f'.{cat}.', suffix='.tmp', dir=cache)
@@ -205,7 +208,7 @@ def direction(degrees):
     return names[int((degrees + 11.25) // 22.5) % 16]
 
 
-def predict(sat, observer, ts, start, end, tz, horizon, min_elevation):
+def predict(sat, observer, ts, start, end, tz, horizon, min_elevation, label=None):
     # Padding captures complete passes that straddle a requested boundary.
     t, events = sat.find_events(observer, ts.from_datetime(start - timedelta(hours=3)),
                                ts.from_datetime(end + timedelta(hours=3)), altitude_degrees=horizon)
@@ -225,7 +228,7 @@ def predict(sat, observer, ts, start, end, tz, horizon, min_elevation):
             if start <= peak_dt < end and alt.degrees >= min_elevation:
                 rise_az = topocentric.at(rise).altaz()[1].degrees
                 set_az = topocentric.at(moment).altaz()[1].degrees
-                result.append(dict(satellite=SATELLITES[sat.model.satnum], norad=sat.model.satnum,
+                result.append(dict(satellite=label or SATELLITES.get(sat.model.satnum, str(sat.model.satnum)), norad=sat.model.satnum,
                     rise=rise.utc_datetime().astimezone(tz).isoformat(timespec='seconds'),
                     peak=peak_dt.astimezone(tz).isoformat(timespec='seconds'),
                     set=moment.utc_datetime().astimezone(tz).isoformat(timespec='seconds'),
@@ -272,12 +275,30 @@ def parser():
                    help='Orbital-element cache directory (default: XDG cache or ~/.cache/nextpass)')
     p.add_argument('--json', type=Path, dest='json_path', help='Save full results and metadata as JSON')
     p.add_argument('--csv', type=Path, dest='csv_path', help='Save chronological passes as CSV')
+    p.add_argument('--catalog', type=Path, help='JSON satellite catalog entries to add or override built-ins')
+    p.add_argument('--ics', type=Path, help='Export calendar events with optional advance alarms')
+    p.add_argument('--reminder-minutes', type=int, default=15, help='Calendar alarm minutes before window start; 0 disables alarms')
+    p.add_argument('--visibility', action='store_true', help='Annotate sunlight and observer darkness at pass peak')
+    p.add_argument('--visible-only', action='store_true', help='Only passes sunlit at peak with a dark observer; enables --visibility')
+    p.add_argument('--max-sun-altitude', type=float, default=-6, help='Maximum observer Sun altitude for visual filtering, degrees')
+    p.add_argument('--ephemeris', type=Path, help='Local planetary BSP for visibility; otherwise cache/download de421.bsp')
     return p
 
 
 def main(argv=None):
     p = parser(); args = p.parse_args(argv)
     try:
+        from planning_features import load_catalog, export_calendar, annotate_visibility
+        if args.reminder_minutes < 0:
+            raise ValueError('--reminder-minutes must be nonnegative')
+        if not -90 <= args.max_sun_altitude <= 90:
+            raise ValueError('--max-sun-altitude must be between -90 and 90')
+        if args.band is not None:
+            from radio_metadata import parse_band
+            parse_band(args.band)
+            if not (args.radio or args.refresh_radio or args.radio_file):
+                raise ValueError('--band requires --radio, --refresh-radio or --radio-file')
+        catalog = load_catalog(args.catalog, CATALOG) if args.catalog else CATALOG
         config = {}
         location_path = args.location_config.expanduser()
         config_error = None
@@ -333,12 +354,12 @@ def main(argv=None):
             if not isinstance(provided, list) or not provided:
                 raise ValueError('--elements must contain a nonempty CelesTrak JSON array')
         rows, sources, satellites = [], [], {}
-        selected = select(args.satellites)
+        selected = select(args.satellites, catalog)
         for cat, name in selected.items():
             if provided is not None and not [row for row in provided if isinstance(row, dict) and _is_integer(row.get('NORAD_CAT_ID')) and int(row['NORAD_CAT_ID']) == cat]:
                 warning(f'{name}: no element set for NORAD {cat} in {args.elements}; skipping.')
                 continue
-            data, source = (provided, str(args.elements)) if provided is not None else load_elements(cat, args.cache_dir, args.offline, args.refresh, ts=ts)
+            data, source = (provided, str(args.elements)) if provided is not None else load_elements(cat, args.cache_dir, args.offline, args.refresh, ts=ts, label=name)
             sat = validate_constructible(validate(data, cat), ts)
             satellites[cat] = sat
             max_age = max(abs(float(ts.from_datetime(d)-sat.epoch)) for d in (start, end))
@@ -347,7 +368,7 @@ def main(argv=None):
             if max_age > 7:
                 warning(f'{name}: date range extends {max_age:.1f} days from epoch; refresh nearer the pass. Predictions may be inaccurate.')
             sources.append(dict(satellite=name, norad=cat, source=source, epoch_utc=sat.epoch.utc_datetime().isoformat(timespec='seconds'), max_epoch_distance_days=round(max_age, 2)))
-            rows.extend(predict(sat, observer, ts, start, end, tz, args.horizon, args.min_elevation))
+            rows.extend(predict(sat, observer, ts, start, end, tz, args.horizon, args.min_elevation, label=name))
         if not satellites:
             raise ValueError('No selected satellites have usable orbital elements')
         if hour_filter:
@@ -356,6 +377,24 @@ def main(argv=None):
                 h = datetime.fromisoformat(row['peak']).time()
                 return a <= h < b if a < b else h >= a or h < b if a > b else True
             rows = [r for r in rows if allowed(r)]
+        visibility = None
+        if args.visibility or args.visible_only:
+            from skyfield.api import Loader, load_file
+            ephemeris_path = args.ephemeris.expanduser() if args.ephemeris else args.cache_dir / 'de421.bsp'
+            if ephemeris_path.exists():
+                ephemeris = load_file(str(ephemeris_path))
+            elif args.ephemeris or args.offline:
+                raise ValueError(f'Visibility requires a local planetary ephemeris at {ephemeris_path}. Supply --ephemeris or run online once.')
+            else:
+                ephemeris = Loader(str(args.cache_dir))('de421.bsp')
+            try:
+                annotate_visibility(rows, satellites, observer, ts, ephemeris, args.max_sun_altitude)
+            finally:
+                ephemeris.close()
+            visibility = dict(evaluation='at pass peak only; not a guarantee of visibility',
+                              max_sun_altitude_deg=args.max_sun_altitude, ephemeris=str(ephemeris_path))
+            if args.visible_only:
+                rows = [row for row in rows if row['visible_at_peak']]
         rows.sort(key=lambda r: datetime.fromisoformat(r['peak']))
         ranked = sorted(rows, key=lambda r: (-r['max_elevation_deg'], r['range_at_peak_km']))
         for rank, row in enumerate(ranked, 1):
@@ -363,27 +402,42 @@ def main(argv=None):
         radio = None
         if args.radio or args.refresh_radio or args.radio_file:
             from radio_metadata import load_radio_metadata
-            radio = load_radio_metadata(
-                satellites.keys(), args.cache_dir, offline=args.offline,
-                refresh=args.refresh_radio, band=args.band, radio_file=args.radio_file,
-                warn=warning)
+            # Explicit local input errors remain fatal; optional remote metadata
+            # must not discard already computed pass predictions.
+            try:
+                radio = load_radio_metadata(
+                    satellites.keys(), args.cache_dir, offline=args.offline,
+                    refresh=args.refresh_radio, band=args.band, radio_file=args.radio_file,
+                    warn=warning)
+            except (ValueError, OSError) as exc:
+                if args.radio_file:
+                    raise
+                warning(f'Radio metadata unavailable; keeping pass predictions ({exc}).')
+                radio = dict(status='unavailable', reason=str(exc), satellites={})
         metadata = dict(location=dict(lat=args.lat, lon=args.lon, altitude_m=args.altitude), timezone=args.timezone,
             start=start.isoformat(), end=end.isoformat(), horizon_deg=args.horizon, minimum_peak_deg=args.min_elevation,
             ranking='Peak elevation descending, then range at peak ascending; geometric opportunity, NOT predicted SNR or transmitter status.',
             sources=sources, passes=rows)
+        if visibility is not None:
+            metadata['visibility'] = visibility
         if radio is not None:
             metadata['radio'] = radio
         from terminal_view import render
         render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts, radio=radio)
-        for path in (args.json_path, args.csv_path):
+        for path in (args.json_path, args.csv_path, args.ics):
             if path:
                 path.parent.mkdir(parents=True, exist_ok=True)
         if args.json_path:
             args.json_path.write_text(json.dumps(metadata, indent=2) + '\n')
         if args.csv_path:
-            fields = list(rows[0]) if rows else ['satellite', 'rise', 'peak', 'set', 'max_elevation_deg', 'rank']
+            fields = ['satellite', 'norad', 'rise', 'peak', 'set', 'max_elevation_deg',
+                      'rise_azimuth_deg', 'peak_azimuth_deg', 'set_azimuth_deg',
+                      'range_at_peak_km', 'window_minutes', 'geometry', 'epoch_utc', 'rank',
+                      'satellite_sunlit_at_peak', 'sun_altitude_at_peak_deg', 'visible_at_peak']
             with args.csv_path.open('w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields); writer.writeheader(); writer.writerows(rows)
+        if args.ics:
+            export_calendar(rows, args.ics, reminder_minutes=args.reminder_minutes)
         return 0
     except ImportError:
         print('Missing Skyfield. Run: python3 -m pip install -r requirements.txt', file=sys.stderr)
