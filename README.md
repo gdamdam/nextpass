@@ -1,13 +1,39 @@
-# nextpass
+<div align="center">
 
-**Find upcoming satellite passes from your observing location.**
+```
+ ███╗   ██╗███████╗██╗  ██╗████████╗██████╗  █████╗ ███████╗███████╗
+ ████╗  ██║██╔════╝╚██╗██╔╝╚══██╔══╝██╔══██╗██╔══██╗██╔════╝██╔════╝
+ ██╔██╗ ██║█████╗   ╚███╔╝    ██║   ██████╔╝███████║███████╗███████╗
+ ██║╚██╗██║██╔══╝   ██╔██╗    ██║   ██╔═══╝ ██╔══██║╚════██║╚════██║
+ ██║ ╚████║███████╗██╔╝ ██╗   ██║   ██║     ██║  ██║███████║███████║
+ ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝  ╚═╝╚══════╝╚══════╝
+```
 
-Get a ranked pass list, a daily schedule, and sky plots in your terminal.
-Export predictions as JSON, CSV, or calendar events.
+### Know when to point the antenna up.
 
-Python 3.9+ · Skyfield / SGP4 · [GPL-3.0-only](LICENSE)
+Pass prediction for weather birds, space stations and amateur satellites —
+ranked by geometry, drawn as sky plots in your terminal, with your coordinates
+kept entirely outside the repository.
 
-## Quick start
+<p>
+<img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
+<img alt="Skyfield 1.55" src="https://img.shields.io/badge/skyfield-1.55%20·%20SGP4-7c3aed?style=for-the-badge">
+<img alt="nextpass v1.4.0" src="https://img.shields.io/badge/nextpass-v1.4.0-0f766e?style=for-the-badge">
+<a href="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml/badge.svg"></a>
+<a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue?style=flat-square"></a>
+</p>
+<p>
+<img alt="Objects" src="https://img.shields.io/badge/objects-8%20tracked-0f766e?style=flat-square">
+<img alt="Data" src="https://img.shields.io/badge/data-CelesTrak%20GP%2FOMM-b45309?style=flat-square">
+<img alt="Output" src="https://img.shields.io/badge/output-ANSI%20sky%20plots%20·%20JSON%20·%20CSV-334155?style=flat-square">
+<img alt="Coordinates" src="https://img.shields.io/badge/coordinates-never%20in%20this%20repo-be123c?style=flat-square">
+</p>
+
+</div>
+
+---
+
+## ⚡ Quick start
 
 ### 1. Get the project
 
@@ -40,7 +66,9 @@ chmod 600 ~/.config/radio/location.json
 The launcher creates `.venv` and installs dependencies on first use. It then
 downloads orbital data and prints your schedule. No personal location is built in.
 
-## Choose satellites
+---
+
+## 🛰 Choose satellites
 
 | Group | Built-in satellites |
 |---|---|
@@ -56,7 +84,9 @@ downloads orbital data and prints your schedule. No personal location is built i
 Omit `--satellites` to include all eight. You can also use NORAD IDs or a
 [custom catalog](docs/guide.md#extend-the-satellite-catalog).
 
-## Common tasks
+---
+
+## 🎛 Common tasks
 
 Add these options to `./predict.sh --days 7`:
 
@@ -74,7 +104,9 @@ Calendar reminders are delivered by your calendar app after import. Visual-pass
 filtering downloads a planetary ephemeris on first use. See all options with
 `./predict.sh --help`.
 
-## Read the results
+---
+
+## 📖 Read the results
 
 Passes rank by maximum elevation. By default, reception windows start and end at
 10° elevation, and only passes peaking at 20° or higher are included.
@@ -86,7 +118,9 @@ an observing session.
 **Keep exports private:** coordinates and even pass times can reveal your location.
 Keep your location file outside Git; generated files being ignored is only a precaution.
 
-## Learn more
+---
+
+## 📚 Learn more
 
 - [Sky plots and output fields](docs/guide.md#reading-the-output)
 - [Calendar exports and visual passes](docs/guide.md#calendar-events-and-reminders)
