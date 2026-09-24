@@ -141,6 +141,11 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
             if g['above_horizon']:
                 paragraph(f"  Point at azimuth {g['azimuth_deg']:.1f} deg ({direction(g['azimuth_deg'])}), "
                           f"elevation {g['elevation_deg']:.1f} deg; range {g['range_km']:.0f} km.")
+                if args.plots:
+                    # One-point path: sky_plot draws A, B and P on the same cell, leaving P.
+                    position = (g['azimuth_deg'], g['elevation_deg'])
+                    print(sky_plot([position], position, min(width,57), colors))
+                    paragraph('P = fixed position. North up; east right. Rings: 0 / 30 / 60 deg; center: 90 deg (overhead).')
             else:
                 paragraph(f"  Below your horizon (elevation {g['elevation_deg']:.1f} deg): not receivable from this location.")
     selected = [r for r in ranked if r['rank']==args.plot_rank] if args.plot_rank else ranked[:args.plots]

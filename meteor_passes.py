@@ -32,7 +32,7 @@ CATALOG = {
 }
 GROUPS = ('meteor', 'stations', 'amateur', 'metop', 'geo')
 SATELLITES = {cat: entry[0] for cat, entry in CATALOG.items()}
-APP_VERSION = '1.5.1'
+APP_VERSION = '1.5.2'
 
 # Required by Skyfield's EarthSatellite.from_omm().
 OMM_REQUIRED_FIELDS = (

@@ -355,6 +355,14 @@ class PredictionTests(unittest.TestCase):
             self.assertTrue(fixed['above_horizon'])
             self.assertAlmostEqual(fixed['subsatellite_longitude_deg'], -137.2, delta=1)
             self.assertGreater(fixed['elevation_deg'], 30)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = app.main(['--location-config', str(ROOT/'tests/nonexistent-private-location.json'),
+                                 '--lat', '37.77', '--lon', '-122.42', '--altitude', '0', '--timezone', 'UTC',
+                                 '--elements', str(elements), '--satellites', 'goes18', '--date', '2026-09-23',
+                                 '--days', '1', '--color', 'never'])
+            self.assertEqual(code, 0)
+            self.assertIn('P = fixed position', out.getvalue())
 
     def test_unreadable_location_config(self):
         if os.geteuid() == 0:
