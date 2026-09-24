@@ -364,6 +364,19 @@ class PredictionTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn('P = fixed position', out.getvalue())
 
+    def test_inclined_geosynchronous_orbit_keeps_passes(self):
+        ts = load.timescale(builtin=True)
+        goes = {"OBJECT_NAME": "GOES 18", "OBJECT_ID": "2022-021A", "EPOCH": "2026-09-23T12:28:26.859648",
+                "MEAN_MOTION": 1.0027214, "ECCENTRICITY": 3.557e-05, "INCLINATION": 0.0446,
+                "RA_OF_ASC_NODE": 342.8132, "ARG_OF_PERICENTER": 248.2021, "MEAN_ANOMALY": 181.479,
+                "EPHEMERIS_TYPE": 0, "CLASSIFICATION_TYPE": "U", "NORAD_CAT_ID": 51850,
+                "ELEMENT_SET_NO": 999, "REV_AT_EPOCH": 757, "BSTAR": 0,
+                "MEAN_MOTION_DOT": 9.5e-07, "MEAN_MOTION_DDOT": 0}
+        self.assertTrue(app.is_geostationary(EarthSatellite.from_omm(ts, goes)))
+        for changes in ({'INCLINATION': 60}, {'ECCENTRICITY': 0.3}):
+            sat = EarthSatellite.from_omm(ts, {**goes, **changes})
+            self.assertFalse(app.is_geostationary(sat), changes)
+
     def test_unreadable_location_config(self):
         if os.geteuid() == 0:
             self.skipTest('root bypasses file permissions')

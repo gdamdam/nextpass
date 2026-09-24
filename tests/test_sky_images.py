@@ -28,6 +28,8 @@ class DayPlotTests(unittest.TestCase):
             rows=save.call_args.args[0]
             self.assertEqual({r['peak'][:10] for r in rows},{'2026-09-21'})
             self.assertTrue(any(r['max_elevation_deg']<20 for r in rows))
+            # Explicit thresholds must not conflict with the day-plot override.
+            self.assertEqual(self.run_cli('--day-plot','day.png','--min-elevation','0')[0],0)
             for extra in [('--satellites','meteor'),('--hours','10:00-12:00'),('--visible-only',),('--day-plot','bad.txt')]:
                 self.assertEqual(self.run_cli('--day-plot','day.png',*extra)[0],2)
     def test_formats_and_empty(self):

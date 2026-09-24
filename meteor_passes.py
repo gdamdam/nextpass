@@ -32,7 +32,7 @@ CATALOG = {
 }
 GROUPS = ('meteor', 'stations', 'amateur', 'metop', 'geo')
 SATELLITES = {cat: entry[0] for cat, entry in CATALOG.items()}
-APP_VERSION = '1.5.2'
+APP_VERSION = '1.6.0'
 
 # Required by Skyfield's EarthSatellite.from_omm().
 OMM_REQUIRED_FIELDS = (
@@ -248,9 +248,14 @@ def predict(sat, observer, ts, start, end, tz, horizon, min_elevation, label=Non
 
 
 def is_geostationary(sat):
-    """True for ~1 revolution per day, where rise/set prediction is meaningless."""
+    """True for a near-circular, near-equatorial ~1 rev/day orbit that holds still in the sky.
+
+    Period alone is not enough: an inclined or eccentric geosynchronous orbit
+    traces a figure-eight or loop and can rise and set, so it must keep passes.
+    """
     revs_per_day = sat.model.no_kozai * 1440 / (2 * math.pi)
-    return 0.9 < revs_per_day < 1.1
+    return (0.9 < revs_per_day < 1.1 and math.degrees(sat.model.inclo) < 1
+            and sat.model.ecco < 0.01)
 
 
 def fixed_look_angle(sat, observer, ts, when, label):
@@ -352,7 +357,8 @@ def main(argv=None):
             raise ValueError('--days must be 1..366 and --top must be positive')
         if not -90 <= args.lat <= 90 or not -180 <= args.lon <= 180 or not math.isfinite(args.altitude):
             raise ValueError('Invalid observer coordinates or altitude')
-        if args.all_passes:
+        # Overrides precede validation so explicit thresholds cannot conflict with them.
+        if args.all_passes or args.day_plot:
             args.horizon, args.min_elevation = 0, 0
         if not 0 <= args.horizon < 90 or not args.horizon <= args.min_elevation <= 90:
             raise ValueError('Require 0 <= horizon <= min-elevation <= 90, with horizon < 90')
@@ -371,7 +377,7 @@ def main(argv=None):
             from sky_images import require_matplotlib
             require_matplotlib()
             args.date = args.date or datetime.now(tz).date()
-            args.days, args.horizon, args.min_elevation = 1, 0, 0
+            args.days = 1
         start = datetime.combine(args.date, time(), tz) if args.date else datetime.now(tz)
         end = start + timedelta(days=args.days)
         hour_filter = None
