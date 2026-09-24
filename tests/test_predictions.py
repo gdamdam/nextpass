@@ -363,6 +363,19 @@ class PredictionTests(unittest.TestCase):
                                  '--days', '1', '--color', 'never'])
             self.assertEqual(code, 0)
             self.assertIn('P = fixed position', out.getvalue())
+            # GOES-18 sits at ~43.7 deg elevation from San Francisco; a 60 deg
+            # horizon puts it below the reportable window.
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = app.main(['--location-config', str(ROOT/'tests/nonexistent-private-location.json'),
+                                 '--lat', '37.77', '--lon', '-122.42', '--altitude', '0', '--timezone', 'UTC',
+                                 '--elements', str(elements), '--satellites', 'goes18', '--date', '2026-09-23',
+                                 '--days', '1', '--horizon', '60', '--min-elevation', '60',
+                                 '--json', str(output)])
+            self.assertEqual(code, 0)
+            data = json.loads(output.read_text())
+            self.assertFalse(data['stationary'][0]['above_horizon'])
+            self.assertIn('Below your horizon', out.getvalue())
 
     def test_inclined_geosynchronous_orbit_keeps_passes(self):
         ts = load.timescale(builtin=True)
@@ -373,9 +386,20 @@ class PredictionTests(unittest.TestCase):
                 "ELEMENT_SET_NO": 999, "REV_AT_EPOCH": 757, "BSTAR": 0,
                 "MEAN_MOTION_DOT": 9.5e-07, "MEAN_MOTION_DDOT": 0}
         self.assertTrue(app.is_geostationary(EarthSatellite.from_omm(ts, goes)))
+        # is_geostationary is now only a period prefilter; inclination/eccentricity
+        # no longer disqualify it there, so the geometric check must keep the passes.
         for changes in ({'INCLINATION': 60}, {'ECCENTRICITY': 0.3}):
             sat = EarthSatellite.from_omm(ts, {**goes, **changes})
-            self.assertFalse(app.is_geostationary(sat), changes)
+            self.assertTrue(app.is_geostationary(sat), changes)
+        # Same inclination change, but with the ascending node rotated so the ground
+        # track's figure-eight actually sweeps over the (0, 0) test observer instead
+        # of staying parked near GOES-18's real slot at -137 deg longitude.
+        inclined = EarthSatellite.from_omm(ts, {**goes, 'INCLINATION': 60, 'RA_OF_ASC_NODE': 180})
+        start = datetime(2026, 9, 23, tzinfo=ZoneInfo('UTC'))
+        end = start + timedelta(days=1)
+        passes = app.predict(inclined, wgs84.latlon(0, 0, elevation_m=0), ts, start, end,
+                              ZoneInfo('UTC'), 0, 0)
+        self.assertTrue(passes)
 
     def test_unreadable_location_config(self):
         if os.geteuid() == 0:

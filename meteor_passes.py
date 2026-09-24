@@ -32,7 +32,7 @@ CATALOG = {
 }
 GROUPS = ('meteor', 'stations', 'amateur', 'metop', 'geo')
 SATELLITES = {cat: entry[0] for cat, entry in CATALOG.items()}
-APP_VERSION = '1.6.0'
+APP_VERSION = '1.7.0'
 
 # Required by Skyfield's EarthSatellite.from_omm().
 OMM_REQUIRED_FIELDS = (
@@ -247,18 +247,24 @@ def predict(sat, observer, ts, start, end, tz, horizon, min_elevation, label=Non
     return result
 
 
-def is_geostationary(sat):
-    """True for a near-circular, near-equatorial ~1 rev/day orbit that holds still in the sky.
+def sample_track(sat, observer, ts, rise_iso, set_iso, samples=241):
+    """Az/el degrees along a pass; shared by the terminal and image plots."""
+    t0, t1 = [ts.from_datetime(datetime.fromisoformat(value)) for value in (rise_iso, set_iso)]
+    alt, az, _ = (sat - observer).at(ts.linspace(t0, t1, samples)).altaz()
+    return az.degrees, alt.degrees
 
-    Period alone is not enough: an inclined or eccentric geosynchronous orbit
-    traces a figure-eight or loop and can rise and set, so it must keep passes.
+
+def is_geostationary(sat):
+    """Cheap prefilter: True for a ~1 rev/day orbit, geostationary or not.
+
+    Period alone can't tell whether the orbit actually holds still in the
+    sky; the caller confirms that geometrically with find_events.
     """
     revs_per_day = sat.model.no_kozai * 1440 / (2 * math.pi)
-    return (0.9 < revs_per_day < 1.1 and math.degrees(sat.model.inclo) < 1
-            and sat.model.ecco < 0.01)
+    return 0.9 < revs_per_day < 1.1
 
 
-def fixed_look_angle(sat, observer, ts, when, label):
+def fixed_look_angle(sat, observer, ts, when, label, horizon):
     from skyfield.api import wgs84
     moment = ts.from_datetime(when)
     alt, az, distance = (sat - observer).at(moment).altaz()
@@ -268,7 +274,7 @@ def fixed_look_angle(sat, observer, ts, when, label):
                 elevation_deg=round(float(alt.degrees), 1),
                 azimuth_deg=round(float(az.degrees), 1),
                 range_km=round(float(distance.km), 1),
-                above_horizon=bool(alt.degrees > 0))
+                above_horizon=bool(alt.degrees > horizon))
 
 
 def parser():
@@ -368,14 +374,15 @@ def main(argv=None):
             raise ValueError('--offline and --refresh-radio cannot be combined')
         tz = ZoneInfo(args.timezone)
         if args.day_plot:
-            if not args.satellites or len(select(args.satellites, catalog)) != 1:
-                raise ValueError('--day-plot requires exactly one satellite, e.g. --satellites M2-4')
             if args.hours or args.visible_only:
                 raise ValueError('--day-plot includes all passes; omit --hours and --visible-only')
             if args.day_plot.suffix.lower() not in ('.png', '.pdf', '.svg'):
                 raise ValueError('--day-plot filename must end in .png, .pdf or .svg')
             from sky_images import require_matplotlib
             require_matplotlib()
+            parent = args.day_plot.parent or Path('.')
+            if parent.exists() and not os.access(parent, os.W_OK):
+                raise ValueError(f'--day-plot directory is not writable: {parent}')
             args.date = args.date or datetime.now(tz).date()
             args.days = 1
         start = datetime.combine(args.date, time(), tz) if args.date else datetime.now(tz)
@@ -399,6 +406,8 @@ def main(argv=None):
                 raise ValueError('--elements must contain a nonempty CelesTrak JSON array')
         rows, sources, satellites, stationary = [], [], {}, []
         selected = select(args.satellites, catalog)
+        if args.day_plot and len(selected) != 1:
+            raise ValueError('--day-plot requires exactly one satellite, e.g. --satellites M2-4')
         for cat, name in selected.items():
             if provided is not None and not [row for row in provided if isinstance(row, dict) and _is_integer(row.get('NORAD_CAT_ID')) and int(row['NORAD_CAT_ID']) == cat]:
                 warning(f'{name}: no element set for NORAD {cat} in {args.elements}; skipping.')
@@ -413,10 +422,17 @@ def main(argv=None):
                 warning(f'{name}: date range extends {max_age:.1f} days from epoch; refresh nearer the pass. Predictions may be inaccurate.')
             sources.append(dict(satellite=name, norad=cat, source=source, epoch_utc=sat.epoch.utc_datetime().isoformat(timespec='seconds'), max_epoch_distance_days=round(max_age, 2)))
             if is_geostationary(sat):
-                # A geostationary object never rises or sets, so find_events would
-                # silently report nothing; report its fixed look angle instead.
-                stationary.append(fixed_look_angle(sat, observer, ts, start, name))
-                continue
+                # Period alone doesn't prove the orbit holds still in the sky, so confirm
+                # geometrically: an inclined geosynchronous orbit that crosses the horizon
+                # must keep its passes, while one that never crosses it has no rise/set
+                # events and would otherwise vanish silently, so report its fixed look
+                # angle instead. A lone culmination event (no rise or set) still counts
+                # as never crossing the horizon.
+                _t, events = sat.find_events(observer, ts.from_datetime(start), ts.from_datetime(end),
+                                              altitude_degrees=args.horizon)
+                if not any(event in (0, 2) for event in events):
+                    stationary.append(fixed_look_angle(sat, observer, ts, start, name, args.horizon))
+                    continue
             rows.extend(predict(sat, observer, ts, start, end, tz, args.horizon, args.min_elevation, label=name))
         if not satellites:
             raise ValueError('No selected satellites have usable orbital elements')
@@ -492,7 +508,7 @@ def main(argv=None):
                 writer = csv.DictWriter(f, fieldnames=fields); writer.writeheader(); writer.writerows(rows)
         if args.day_plot:
             from sky_images import save_day_plot
-            save_day_plot(rows, satellites, observer, ts, tz, start, args.day_plot)
+            save_day_plot(rows, satellites, observer, ts, tz, start, args.day_plot, label=next(iter(selected.values())))
             print(f'\nSaved day sky plot: {args.day_plot}')
         if args.ics:
             export_calendar(rows, args.ics, reminder_minutes=args.reminder_minutes)

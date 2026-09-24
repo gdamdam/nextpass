@@ -33,7 +33,8 @@ PINK = (245,140,255)
 # One stable color per catalog label so a bird keeps its color across runs.
 SAT_COLORS = {'M2-3': CYAN, 'M2-4': PINK, 'ISS': GREEN, 'CSS': YELLOW,
               'AO-73': (140,200,255), 'RS-44': (255,175,120),
-              'SO-50': (180,255,200), 'AO-123': (215,170,255)}
+              'SO-50': (180,255,200), 'AO-123': (215,170,255),
+              'METOPB': (255,140,140), 'METOPC': (140,255,220), 'GOES18': (255,200,255)}
 
 
 def project(azimuth, elevation, radius_x, radius_y):
@@ -128,7 +129,7 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
             paragraph(f"  At peak: satellite {'sunlit' if r['satellite_sunlit_at_peak'] else 'in shadow'}; Sun {r['sun_altitude_at_peak_deg']:.1f} deg; visual candidate {'yes' if r['visible_at_peak'] else 'no'}.")
         if a.date()!=peak.date() or b.date()!=peak.date() or a.utcoffset()!=b.utcoffset():
             paragraph(f'  Full window: {a:%Y-%m-%d %H:%M:%S %Z} -> {b:%Y-%m-%d %H:%M:%S %Z}')
-    if not rows:
+    if not rows and not stationary:
         paragraph('No matching passes. Try a longer range or lower minimum elevation.')
     if stationary:
         from meteor_passes import direction
@@ -155,10 +156,9 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
         print(colors.paint('\n'+'-'*min(width,78),MUTED))
         paragraph(f"SKY PATH #{r['rank']} | {r['satellite']} | {stamp(r,'peak',tz):%a %Y-%m-%d %H:%M:%S %Z}")
         sat = satellites[r['norad']]
-        t0,t1 = [ts.from_datetime(datetime.fromisoformat(r[k])) for k in ('rise','set')]
-        times = ts.linspace(t0,t1,241)
-        alt,az,_ = (sat-observer).at(times).altaz()
-        print(sky_plot(list(zip(az.degrees,alt.degrees)),(r['peak_azimuth_deg'],r['max_elevation_deg']),min(width,57),colors))
+        from meteor_passes import sample_track
+        az, alt = sample_track(sat, observer, ts, r['rise'], r['set'])
+        print(sky_plot(list(zip(az,alt)),(r['peak_azimuth_deg'],r['max_elevation_deg']),min(width,57),colors))
         paragraph('A = start  ->  * = predicted path  ->  B = end; P = peak')
         paragraph('North up; east right. Rings: 0 / 30 / 60 deg; center: 90 deg (overhead). Static forecast, not live tracking.')
         for label,key,azkey in [('A','rise','rise_azimuth_deg'),('P','peak','peak_azimuth_deg'),('B','set','set_azimuth_deg')]:

@@ -12,24 +12,24 @@ def require_matplotlib():
     return Figure, FigureCanvasAgg
 
 
-def save_day_plot(rows, satellites, observer, ts, tz, day, path):
+def save_day_plot(rows, satellites, observer, ts, tz, day, path, label=None):
     Figure, Canvas = require_matplotlib()
     columns = min(3, max(1, len(rows)))
     nrows = max(1, math.ceil(len(rows) / columns))
     fig = Figure(figsize=(5 * columns, 5.4 * nrows + 1.5), facecolor='white')
     Canvas(fig)
     sat = next(iter(satellites.values()))
-    label = rows[0]['satellite'] if rows else sat.name
-    fig.suptitle(f'{label} · {day:%Y-%m-%d}', fontsize=20, y=.985)
+    title = rows[0]['satellite'] if rows else (label if label is not None else sat.name)
+    fig.suptitle(f'{title} · {day:%Y-%m-%d}', fontsize=20, y=.985)
     fig.text(.5, .95, f'All passes · {tz.key} · North up / east right', ha='center', fontsize=11)
     for index, row in enumerate(rows):
         ax = fig.add_subplot(nrows, columns, index + 1, projection='polar')
         moments = [datetime.fromisoformat(row[k]).astimezone(tz) for k in ('rise', 'peak', 'set')]
         start, peak, end = moments
-        times = ts.linspace(ts.from_datetime(start), ts.from_datetime(end), 241)
-        alt, az, _ = (satellites[row['norad']] - observer).at(times).altaz()
-        theta = [math.radians(float(a)) for a in az.degrees]
-        radius = [90 - max(0, min(90, float(a))) for a in alt.degrees]
+        from meteor_passes import sample_track
+        az, alt = sample_track(satellites[row['norad']], observer, ts, row['rise'], row['set'])
+        theta = [math.radians(float(a)) for a in az]
+        radius = [90 - max(0, min(90, float(a))) for a in alt]
         color = '#087e8b'
         ax.set_theta_zero_location('N')
         ax.set_theta_direction(-1)
