@@ -329,6 +329,33 @@ class PredictionTests(unittest.TestCase):
             data = json.loads(output.read_text())
             self.assertEqual({row['norad'] for row in data['sources']}, set(app.CATALOG))
 
+    def test_geostationary_reports_fixed_look_angle_not_passes(self):
+        goes = {"OBJECT_NAME": "GOES 18", "OBJECT_ID": "2022-021A", "EPOCH": "2026-09-23T12:28:26.859648",
+                "MEAN_MOTION": 1.0027214, "ECCENTRICITY": 3.557e-05, "INCLINATION": 0.0446,
+                "RA_OF_ASC_NODE": 342.8132, "ARG_OF_PERICENTER": 248.2021, "MEAN_ANOMALY": 181.479,
+                "EPHEMERIS_TYPE": 0, "CLASSIFICATION_TYPE": "U", "NORAD_CAT_ID": 51850,
+                "ELEMENT_SET_NO": 999, "REV_AT_EPOCH": 757, "BSTAR": 0,
+                "MEAN_MOTION_DOT": 9.5e-07, "MEAN_MOTION_DDOT": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            elements = Path(directory) / 'goes.json'
+            output = Path(directory) / 'goes-results.json'
+            elements.write_text(json.dumps([goes]))
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                # San Francisco sees GOES-18 (137.2 W) well above the horizon.
+                code = app.main(['--location-config', str(ROOT/'tests/nonexistent-private-location.json'),
+                                 '--lat', '37.77', '--lon', '-122.42', '--altitude', '0', '--timezone', 'UTC',
+                                 '--elements', str(elements), '--satellites', 'goes18', '--date', '2026-09-23',
+                                 '--days', '1', '--no-plot', '--json', str(output)])
+            self.assertEqual(code, 0, err.getvalue())
+            self.assertIn('does not move', out.getvalue())
+            data = json.loads(output.read_text())
+            self.assertEqual(data['passes'], [])
+            [fixed] = data['stationary']
+            self.assertTrue(fixed['above_horizon'])
+            self.assertAlmostEqual(fixed['subsatellite_longitude_deg'], -137.2, delta=1)
+            self.assertGreater(fixed['elevation_deg'], 30)
+
     def test_unreadable_location_config(self):
         if os.geteuid() == 0:
             self.skipTest('root bypasses file permissions')

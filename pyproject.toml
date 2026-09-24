@@ -11,11 +11,14 @@ license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
 
+[project.optional-dependencies]
+plots = ["matplotlib>=3.7"]
+
 [project.scripts]
 nextpass = "meteor_passes:main"
 
 [tool.setuptools]
-py-modules = ["meteor_passes", "terminal_view", "radio_metadata", "planning_features"]
+py-modules = ["meteor_passes", "terminal_view", "radio_metadata", "planning_features", "sky_images"]
 
 [tool.setuptools.dynamic]
 version = {attr = "meteor_passes.APP_VERSION"}

@@ -79,7 +79,8 @@ def stamp(row, key, tz):
     return datetime.fromisoformat(row[key]).astimezone(tz)
 
 
-def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts, radio=None):
+def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts, radio=None,
+           stationary=()):
     width = max(40, min(100, shutil.get_terminal_size((80,24)).columns))
     colors = Colors(args.color)
     def paragraph(text, rgb=None):
@@ -129,6 +130,19 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
             paragraph(f'  Full window: {a:%Y-%m-%d %H:%M:%S %Z} -> {b:%Y-%m-%d %H:%M:%S %Z}')
     if not rows:
         paragraph('No matching passes. Try a longer range or lower minimum elevation.')
+    if stationary:
+        from meteor_passes import direction
+        heading('\nFIXED-POSITION (GEOSTATIONARY) SATELLITES')
+        for g in stationary:
+            lon = g['subsatellite_longitude_deg']
+            paragraph(f"{g['satellite']} is geostationary: it circles the Earth once a day above the "
+                      f"equator at {abs(lon):.1f} deg {'W' if lon < 0 else 'E'}, so it does not move across "
+                      "your sky and has no passes. Aim a fixed antenna once and leave it.")
+            if g['above_horizon']:
+                paragraph(f"  Point at azimuth {g['azimuth_deg']:.1f} deg ({direction(g['azimuth_deg'])}), "
+                          f"elevation {g['elevation_deg']:.1f} deg; range {g['range_km']:.0f} km.")
+            else:
+                paragraph(f"  Below your horizon (elevation {g['elevation_deg']:.1f} deg): not receivable from this location.")
     selected = [r for r in ranked if r['rank']==args.plot_rank] if args.plot_rank else ranked[:args.plots]
     if args.plot_rank and not selected:
         paragraph(f'No pass with rank #{args.plot_rank} in this result.')

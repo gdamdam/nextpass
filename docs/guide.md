@@ -51,7 +51,7 @@ pass `--cache-dir .cache`.
 
 ## What it tracks
 
-Eight built-in objects, in three groups; extend or override them with `--catalog`. NORAD IDs were verified against the live CelesTrak
+Eleven built-in objects, in five groups; extend or override them with `--catalog`. NORAD IDs were verified against the live CelesTrak
 catalog on 2026-09-22.
 
 | Label | Object | NORAD | Group | Why you'd chase it |
@@ -64,6 +64,16 @@ catalog on 2026-09-22.
 | `RS-44` | RS-44 (DOSAAF-85) | 44909 | `amateur` | Excellent high-orbit linear transponder, long passes |
 | `SO-50` | SAUDISAT 1C | 27607 | `amateur` | The classic easy FM repeater bird |
 | `AO-123` | ASRTU-1 | 61781 | `amateur` | V/U transponder and image downlink |
+| `METOPB` | METOP-B | 38771 | `metop` | AHRPT weather imagery, L-band 1701.3 MHz |
+| `METOPC` | METOP-C | 43689 | `metop` | AHRPT weather imagery, L-band 1701.3 MHz |
+| `GOES18` | GOES 18 | 51850 | `geo` | HRIT/EMWIN, 1694.1 MHz; geostationary at ~137°W |
+
+> [!NOTE]
+> **GOES-18 does not move.** It orbits once per day above the equator, so it sits at a
+> fixed point in your sky and never rises or sets. Instead of passes, nextpass prints
+> the azimuth and elevation to aim a fixed dish at (or says it is below your horizon;
+> it is only visible from roughly the Americas' Pacific side and the Pacific). The
+> JSON export lists it under `stationary`. `--day-plot` rejects it.
 
 > [!WARNING]
 > **This tool predicts geometry, not transmissions.** It never queries transmitter
@@ -84,7 +94,7 @@ catalog on 2026-09-22.
 
 Labels, group names and NORAD IDs can be mixed freely and are case-insensitive.
 Duplicates collapse, and output always follows catalog order. Omit the flag to get
-all eight.
+all eleven.
 
 ### Extend the satellite catalog
 
@@ -262,7 +272,7 @@ For historical work, supply a CelesTrak-format JSON array:
 ```
 
 Objects **absent from that file are skipped with a warning** rather than aborting the
-run, so an old two-satellite element file still works against the full eight-object
+run, so an old two-satellite element file still works against the full eleven-object
 catalog. Pair it with `--satellites` to silence the warnings entirely.
 
 Never use current orbital data for precise predictions months into the past or future;

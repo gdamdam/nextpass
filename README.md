@@ -18,7 +18,7 @@ kept entirely outside the repository.
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
 <img alt="Skyfield 1.55" src="https://img.shields.io/badge/skyfield-1.55%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.4.0" src="https://img.shields.io/badge/nextpass-v1.4.0-0f766e?style=for-the-badge">
+<img alt="nextpass v1.5.1" src="https://img.shields.io/badge/nextpass-v1.5.1-0f766e?style=for-the-badge">
 </p>
 <p>
 <a href="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml/badge.svg"></a>
@@ -73,13 +73,15 @@ downloads orbital data and prints your schedule. No personal location is built i
 | `meteor` | METEOR-M2 3, METEOR-M2 4 |
 | `stations` | ISS, CSS |
 | `amateur` | AO-73, RS-44, SO-50, AO-123 |
+| `metop` | METOPB, METOPC |
+| `geo` | GOES18 (geostationary: fixed pointing, no passes) |
 
 ```sh
 ./predict.sh --satellites meteor --days 3
 ./predict.sh --satellites iss,m2-4,so-50 --days 3
 ```
 
-Omit `--satellites` to include all eight. You can also use NORAD IDs or a
+Omit `--satellites` to include all eleven. You can also use NORAD IDs or a
 [custom catalog](docs/guide.md#extend-the-satellite-catalog).
 
 ---
@@ -127,3 +129,40 @@ Keep your location file outside Git; generated files being ignored is only a pre
 - [Pip installation](docs/guide.md#quickstart) · [Tests and validation](docs/guide.md#validation)
 
 Use [iqscan](https://github.com/gdamdam/iqscan) to inspect the recording afterward.
+
+## Daily sky-path pictures
+
+Install image support once from the project directory:
+
+```sh
+python3 -m pip install '.[plots]'
+```
+
+Save every above-horizon pass for one satellite on a local calendar day:
+
+```sh
+nextpass --satellites M2-4 --date 2026-09-23 --day-plot meteor-day.png --no-plot
+nextpass --satellites M2-4 --day-plot meteor-today.pdf --no-plot
+```
+
+Omit `--date` for today in your configured timezone. PNG, PDF and SVG are supported;
+PDF is convenient for printing. The picture has one chronological sky panel per
+pass, direction arrows, rise/set times, peak time and elevation, and orbital epoch.
+North is up, east right, the outer ring is the horizon and the centre is overhead.
+
+`--day-plot` selects exactly one full local day (overriding `--days`), sets both
+horizon and minimum elevation to 0°, and requires a single `--satellites` entry.
+This includes the low passes normally hidden by the 20° minimum. `--hours` and
+`--visible-only` are rejected because they would hide passes. As with normal
+predictions, a pass belongs to the day containing its peak; complete tracks can
+cross midnight. `--no-plot` suppresses only terminal ASCII plots, not the image.
+Normal commands remain unchanged and do not require Matplotlib.
+
+Include low passes in the normal terminal schedule without making a picture:
+
+```sh
+nextpass --days 2 --satellites meteor --all-passes
+```
+
+`--all-passes` overrides both elevation thresholds to 0°; date, satellite and
+explicit hour/visibility filters still apply. Omit it to keep the usual defaults.
