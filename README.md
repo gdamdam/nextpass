@@ -66,6 +66,21 @@ downloads orbital data and prints your schedule. No personal location is built i
 
 ---
 
+## 🖥 Example output
+
+A one-day Meteor forecast for Wellington, New Zealand (a neutral example location),
+trimmed after the first sky plot:
+
+```sh
+./predict.sh --lat -41.29 --lon 174.78 --altitude 20 --timezone Pacific/Auckland --days 1 --satellites meteor --plots 1
+```
+
+<p align="center">
+<img alt="nextpass terminal output: ranked Meteor passes, schedule and a sky plot" src="docs/example-output.svg" width="720">
+</p>
+
+---
+
 ## 🛰 Choose satellites
 
 | Group | Built-in satellites |
