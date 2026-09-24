@@ -60,6 +60,17 @@ class PredictionTests(unittest.TestCase):
         code,out,err=self.run_cli('--date','2027-01-01','--days','1')
         self.assertEqual(code,2); self.assertIn('orbital epoch',err)
 
+    def test_stale_warnings_print_last_and_bold(self):
+        both = io.StringIO()
+        with contextlib.redirect_stdout(both), contextlib.redirect_stderr(both):
+            code = app.main(['--location-config', str(ROOT/'tests/nonexistent-private-location.json'), '--lat','0','--lon','0',
+                             '--altitude','0','--timezone','UTC','--elements', str(ROOT/'examples/elements-2026-09-21.json'),
+                             '--date','2026-09-29','--days','1','--satellites','meteor','--no-plot','--color','always'])
+        text = both.getvalue()
+        self.assertEqual(code, 0, text)
+        self.assertIn('\033[1mWARNING: M2-3: date range extends', text)
+        self.assertGreater(text.index('WARNING'), text.index('PASS SCHEDULE'))
+
     def test_invalid_options(self):
         for options in [('--days','0'),('--lat','91'),('--horizon','30','--min-elevation','20'),('--offline','--refresh')]:
             self.assertEqual(self.run_cli(*options)[0],2)
@@ -349,6 +360,13 @@ class PredictionTests(unittest.TestCase):
                                  '--days', '1', '--no-plot', '--json', str(output)])
             self.assertEqual(code, 0, err.getvalue())
             self.assertIn('does not move', out.getvalue())
+            # Stationary look angles don't drift with element age, so no refresh warning.
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err := io.StringIO()):
+                app.main(['--location-config', str(ROOT/'tests/nonexistent-private-location.json'),
+                          '--lat', '37.77', '--lon', '-122.42', '--altitude', '0', '--timezone', 'UTC',
+                          '--elements', str(elements), '--satellites', 'goes18', '--date', '2026-10-02',
+                          '--days', '1', '--no-plot'])
+            self.assertNotIn('from epoch', err.getvalue())
             data = json.loads(output.read_text())
             self.assertEqual(data['passes'], [])
             [fixed] = data['stationary']

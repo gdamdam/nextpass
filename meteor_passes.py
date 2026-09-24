@@ -83,8 +83,14 @@ def default_cache_dir():
     return (Path(cache_home) if cache_home else Path.home() / '.cache') / 'nextpass'
 
 
-def warning(message):
-    print('WARNING: ' + message, file=sys.stderr)
+def warning(message, bold=False):
+    text = 'WARNING: ' + message
+    print(f'\033[1m{text}\033[0m' if bold else text, file=sys.stderr)
+
+
+def stderr_bold(mode):
+    return mode == 'always' or (mode == 'auto' and sys.stderr.isatty() and 'NO_COLOR' not in os.environ
+                                and os.environ.get('TERM') != 'dumb')
 
 
 def load_elements(cat, cache, offline=False, refresh=False, ts=None, label=None):
@@ -405,6 +411,8 @@ def main(argv=None):
             if not isinstance(provided, list) or not provided:
                 raise ValueError('--elements must contain a nonempty CelesTrak JSON array')
         rows, sources, satellites, stationary = [], [], {}, []
+        # Printed after the schedule so they are the last thing seen, not scrolled away.
+        stale_warnings = []
         selected = select(args.satellites, catalog)
         if args.day_plot and len(selected) != 1:
             raise ValueError('--day-plot requires exactly one satellite, e.g. --satellites M2-4')
@@ -418,8 +426,8 @@ def main(argv=None):
             max_age = max(abs(float(ts.from_datetime(d)-sat.epoch)) for d in (start, end))
             if max_age > 14 and not args.allow_stale:
                 raise ValueError(f'{name}: requested dates are up to {max_age:.1f} days from orbital epoch. Use elements near your dates (--elements), shorten the range, or explicitly --allow-stale for rough planning.')
-            if max_age > 7:
-                warning(f'{name}: date range extends {max_age:.1f} days from epoch; refresh nearer the pass. Predictions may be inaccurate.')
+            stale = (f'{name}: date range extends {max_age:.1f} days from epoch; refresh nearer the pass. '
+                     'Predictions may be inaccurate.') if max_age > 7 else None
             sources.append(dict(satellite=name, norad=cat, source=source, epoch_utc=sat.epoch.utc_datetime().isoformat(timespec='seconds'), max_epoch_distance_days=round(max_age, 2)))
             if is_geostationary(sat):
                 # Period alone doesn't prove the orbit holds still in the sky, so confirm
@@ -431,8 +439,11 @@ def main(argv=None):
                 _t, events = sat.find_events(observer, ts.from_datetime(start), ts.from_datetime(end),
                                               altitude_degrees=args.horizon)
                 if not any(event in (0, 2) for event in events):
+                    # A fixed look angle barely changes with element age, so no refresh nag.
                     stationary.append(fixed_look_angle(sat, observer, ts, start, name, args.horizon))
                     continue
+            if stale:
+                stale_warnings.append(stale)
             rows.extend(predict(sat, observer, ts, start, end, tz, args.horizon, args.min_elevation, label=name))
         if not satellites:
             raise ValueError('No selected satellites have usable orbital elements')
@@ -512,6 +523,13 @@ def main(argv=None):
             print(f'\nSaved day sky plot: {args.day_plot}')
         if args.ics:
             export_calendar(rows, args.ics, reminder_minutes=args.reminder_minutes)
+        if stale_warnings:
+            print(file=sys.stderr)
+            bold = stderr_bold(args.color)
+            for message in stale_warnings:
+                warning(message, bold=bold)
+            print('Add --refresh for current elements, and re-run nearer the pass or with fewer --days: '
+                  'accuracy falls with distance from the element epoch.', file=sys.stderr)
         return 0
     except ImportError:
         print('Missing Skyfield. Run: python3 -m pip install -r requirements.txt', file=sys.stderr)
