@@ -285,6 +285,9 @@ The predictor reads `~/.config/radio/location.json` by default, overridable with
 and should be mode `600`. **There is no personal-location fallback in the code** — the
 program errors out instead of guessing.
 
+`--lat`, `--lon`, `--altitude` (metres) and `--timezone` override individual fields
+from the file. Passing all four works without any config file.
+
 ```json
 {"lat": 0.0, "lon": 0.0, "altitude": 0, "timezone": "UTC"}
 ```
@@ -307,7 +310,7 @@ Tests pass a neutral location explicitly and never touch your config.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Fifty-one tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
+Fifty-six tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
 exports, satellite selection, OMM validation, cache recovery, element-file skipping,
 concurrent refreshes and stale-data rejection, plus mocked radio metadata schema,
 cache, offline, band, pagination and local-override behavior, plus calendar alarms,

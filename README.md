@@ -23,7 +23,7 @@ kept entirely outside the repository.
 <p>
 <a href="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml/badge.svg"></a>
 <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue?style=flat-square"></a>
-<img alt="Objects" src="https://img.shields.io/badge/objects-8%20tracked-0f766e?style=flat-square">
+<img alt="Objects" src="https://img.shields.io/badge/objects-11%20tracked-0f766e?style=flat-square">
 <img alt="Data" src="https://img.shields.io/badge/data-CelesTrak%20GP%2FOMM-b45309?style=flat-square">
 </p>
 
@@ -99,6 +99,7 @@ Add these options to `./predict.sh --days 7`:
 | Include radio frequency information | `--radio` |
 | Use previously cached data without downloads | `--offline` |
 | Show the schedule without sky plots | `--no-plot` |
+| Include low passes normally hidden by the 20° minimum | `--all-passes` |
 
 Calendar reminders are delivered by your calendar app after import. Visual-pass
 filtering downloads a planetary ephemeris on first use. See all options with
@@ -120,29 +121,20 @@ Keep your location file outside Git; generated files being ignored is only a pre
 
 ---
 
-## 📚 Learn more
+## 🗓 Daily sky-path pictures
 
-- [Sky plots and output fields](docs/guide.md#reading-the-output)
-- [Calendar exports and visual passes](docs/guide.md#calendar-events-and-reminders)
-- [Radio metadata](docs/guide.md#optional-radio-metadata) · [Orbital data and caching](docs/guide.md#orbital-data-freshness)
-- [Location configuration](docs/guide.md#private-location)
-- [Pip installation](docs/guide.md#quickstart) · [Tests and validation](docs/guide.md#validation)
-
-Use [iqscan](https://github.com/gdamdam/iqscan) to inspect the recording afterward.
-
-## Daily sky-path pictures
-
-Install image support once from the project directory:
+Install image support once into the launcher's environment:
 
 ```sh
-python3 -m pip install '.[plots]'
+./predict.sh --help >/dev/null   # creates .venv on first use
+.venv/bin/python -m pip install 'matplotlib>=3.7'
 ```
 
 Save every above-horizon pass for one satellite on a local calendar day:
 
 ```sh
-nextpass --satellites M2-4 --date 2026-09-23 --day-plot meteor-day.png --no-plot
-nextpass --satellites M2-4 --day-plot meteor-today.pdf --no-plot
+./predict.sh --satellites M2-4 --date 2026-09-23 --day-plot meteor-day.png --no-plot
+./predict.sh --satellites M2-4 --day-plot meteor-today.pdf --no-plot
 ```
 
 Omit `--date` for today in your configured timezone. PNG, PDF and SVG are supported;
@@ -161,8 +153,20 @@ Normal commands remain unchanged and do not require Matplotlib.
 Include low passes in the normal terminal schedule without making a picture:
 
 ```sh
-nextpass --days 2 --satellites meteor --all-passes
+./predict.sh --days 2 --satellites meteor --all-passes
 ```
 
 `--all-passes` overrides both elevation thresholds to 0°; date, satellite and
 explicit hour/visibility filters still apply. Omit it to keep the usual defaults.
+
+---
+
+## 📚 Learn more
+
+- [Sky plots and output fields](docs/guide.md#reading-the-output)
+- [Calendar exports and visual passes](docs/guide.md#calendar-events-and-reminders)
+- [Radio metadata](docs/guide.md#optional-radio-metadata) · [Orbital data and caching](docs/guide.md#orbital-data-freshness)
+- [Location configuration](docs/guide.md#private-location)
+- [Pip installation](docs/guide.md#quickstart) · [Tests and validation](docs/guide.md#validation)
+
+Use [iqscan](https://github.com/gdamdam/iqscan) to inspect the recording afterward.
