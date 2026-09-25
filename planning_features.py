@@ -54,12 +54,28 @@ def export_calendar(rows, path, reminder_minutes=15):
 
     Events span rise to set. A VALARM is included when reminder_minutes is a
     positive integer; pass None or 0 to omit reminders. The event UID is stable
-    for a given NORAD/rise/set tuple.
+    for a given NORAD and pass peak rounded to the nearest minute. When replacing
+    a prior nextpass calendar, nearby recalculated peaks keep their old UID.
     """
     if reminder_minutes is not None and (isinstance(reminder_minutes, bool) or
             not isinstance(reminder_minutes, int) or reminder_minutes < 0):
         raise ValueError('reminder_minutes must be a non-negative integer or None')
 
+    destination = Path(path)
+    old_events = []
+    if destination.exists():
+        prior = destination.read_text(encoding='utf-8').replace('\r\n ', '')
+        for block in prior.split('BEGIN:VEVENT')[1:]:
+            body = block.split('END:VEVENT', 1)[0]
+            fields = dict(line.split(':', 1) for line in body.splitlines() if ':' in line)
+            if {'UID', 'X-NEXTPASS-NORAD', 'X-NEXTPASS-PEAK'} <= fields.keys():
+                try:
+                    old_events.append((int(fields['X-NEXTPASS-NORAD']),
+                                       datetime.strptime(fields['X-NEXTPASS-PEAK'], '%Y%m%dT%H%M%SZ').replace(tzinfo=timezone.utc),
+                                       fields['UID']))
+                except ValueError:
+                    pass
+    used_uids = set()
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//nextpass//Satellite Passes//EN',
              'CALSCALE:GREGORIAN', 'METHOD:PUBLISH']
@@ -74,9 +90,20 @@ def export_calendar(rows, path, reminder_minutes=15):
             raise ValueError('norad must be a positive integer')
         satellite = row.get('satellite', 'Satellite {}'.format(norad))
         geometry = row.get('geometry', 'Unknown')
-        uid_source = '{}|{}|{}'.format(norad, _utc_ical(rise_text, 'rise'), _utc_ical(set_text, 'set'))
-        uid = hashlib.sha256(uid_source.encode('utf-8')).hexdigest() + '@nextpass'
         peak = _aware_datetime(row['peak'], 'peak') if row.get('peak') is not None else None
+        identity_time = peak or rise + (setting - rise) / 2
+        rounded_minute = int((identity_time.timestamp() + 30) // 60)
+        uid_source = '{}|{}'.format(norad, rounded_minute)
+        uid = hashlib.sha256(uid_source.encode('utf-8')).hexdigest() + '@nextpass'
+        if peak:
+            choices = [(abs((old_peak - peak.astimezone(timezone.utc)).total_seconds()), old_uid)
+                       for old_norad, old_peak, old_uid in old_events
+                       if old_norad == norad and old_uid not in used_uids]
+            if choices:
+                distance, old_uid = min(choices)
+                if distance <= 20 * 60:
+                    uid = old_uid
+        used_uids.add(uid)
         summary = '{} pass ({})'.format(satellite, geometry)
         details = ['Satellite: {}'.format(satellite), 'NORAD: {}'.format(norad),
                    'Geometry: {}'.format(geometry),
@@ -91,6 +118,8 @@ def export_calendar(rows, path, reminder_minutes=15):
             if key in row:
                 details.append('{}: {}{}'.format(label, row[key], suffix))
         lines.extend(['BEGIN:VEVENT', 'UID:{}'.format(uid), 'DTSTAMP:{}'.format(stamp),
+                      'X-NEXTPASS-NORAD:{}'.format(norad),
+                      'X-NEXTPASS-PEAK:{}'.format(_utc_ical(row['peak'], 'peak') if peak else _utc_ical(rise_text, 'rise')),
                       'DTSTART:{}'.format(_utc_ical(rise_text, 'rise')),
                       'DTEND:{}'.format(_utc_ical(set_text, 'set')),
                       'SUMMARY:{}'.format(_ical_escape(summary)),
@@ -101,7 +130,6 @@ def export_calendar(rows, path, reminder_minutes=15):
                           'TRIGGER:-PT{}M'.format(reminder_minutes), 'END:VALARM'])
         lines.append('END:VEVENT')
     lines.append('END:VCALENDAR')
-    destination = Path(path)
     with destination.open('w', encoding='utf-8', newline='') as output:
         output.write('\r\n'.join(_fold_ical_line(line) for line in lines) + '\r\n')
     return destination
@@ -171,12 +199,10 @@ def load_catalog(path, builtin):
 
 def annotate_visibility(rows, satellites, observer, ts, ephemeris,
                         max_sun_altitude=-6):
-    """Annotate pass rows with satellite sunlight and observer darkness at peak.
+    """Annotate peak visibility and sample the entire reception window.
 
-    ``visible_at_peak`` is true only when the satellite is sunlit and the Sun
-    is at or below max_sun_altitude at the observer, evaluated at the row's
-    peak instant. It does not describe illumination or visibility over the
-    complete pass.
+    Samples identify candidate intervals; apparent magnitude, weather and
+    local obstructions still require separate information.
     """
     if (not isinstance(max_sun_altitude, (int, float)) or isinstance(max_sun_altitude, bool)
             or not math.isfinite(max_sun_altitude) or not -90 <= max_sun_altitude <= 90):
@@ -187,14 +213,40 @@ def annotate_visibility(rows, satellites, observer, ts, ephemeris,
         norad = row['norad']
         if norad not in satellites:
             raise ValueError('no satellite supplied for NORAD {}'.format(norad))
-        moment = ts.from_datetime(_aware_datetime(row['peak'], 'peak'))
-        sunlit = bool(satellites[norad].at(moment).is_sunlit(ephemeris))
-        apparent_sun = (earth + observer).at(moment).observe(sun).apparent()
-        sun_altitude = float(apparent_sun.altaz()[0].degrees)
-        if not math.isfinite(sun_altitude) or not -90 <= sun_altitude <= 90:
-            raise ValueError('computed solar altitude must be finite and between -90 and 90 degrees')
+        def conditions(instant):
+            moment = ts.from_datetime(instant)
+            lit = bool(satellites[norad].at(moment).is_sunlit(ephemeris))
+            apparent = (earth + observer).at(moment).observe(sun).apparent()
+            altitude = float(apparent.altaz()[0].degrees)
+            if not math.isfinite(altitude) or not -90 <= altitude <= 90:
+                raise ValueError('computed solar altitude must be finite and between -90 and 90 degrees')
+            return lit, altitude
+        peak = _aware_datetime(row['peak'], 'peak')
+        sunlit, sun_altitude = conditions(peak)
         dark = sun_altitude <= max_sun_altitude
         row['satellite_sunlit_at_peak'] = sunlit
         row['sun_altitude_at_peak_deg'] = round(sun_altitude, 2)
         row['visible_at_peak'] = sunlit and dark
+        if 'rise' in row and 'set' in row:
+            rise = _aware_datetime(row['rise'], 'rise')
+            setting = _aware_datetime(row['set'], 'set')
+            if setting <= rise:
+                raise ValueError('set must be later than rise')
+            count = max(2, min(121, math.ceil((setting-rise).total_seconds()/30)+1))
+            candidates = []
+            for index in range(count):
+                instant = rise + (setting-rise) * index/(count-1)
+                lit, altitude = conditions(instant)
+                if lit and altitude <= max_sun_altitude:
+                    candidates.append((index, instant))
+            runs = []
+            for index, instant in candidates:
+                if not runs or index != runs[-1][-1][0] + 1:
+                    runs.append([])
+                runs[-1].append((index, instant))
+            best = max(runs, key=lambda run: len(run)) if runs else []
+            row['visual_candidate_start'] = best[0][1].isoformat() if best else None
+            row['visual_candidate_end'] = best[-1][1].isoformat() if best else None
+            row['visual_candidate_minutes'] = round((best[-1][1]-best[0][1]).total_seconds()/60, 1) if best else 0
+            row['visible_during_pass'] = bool(candidates)
     return rows

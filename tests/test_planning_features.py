@@ -53,6 +53,21 @@ class PlanningFeatureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 features.export_calendar([row], output, reminder_minutes=True)
 
+    def test_calendar_keeps_uid_after_small_prediction_shift(self):
+        row = {'norad': 25544, 'satellite': 'ISS',
+               'rise': '2026-09-23T10:00:00+00:00',
+               'peak': '2026-09-23T10:05:00+00:00',
+               'set': '2026-09-23T10:10:00+00:00'}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'passes.ics'
+            features.export_calendar([row], path)
+            old_uid = next(line for line in path.read_text().splitlines() if line.startswith('UID:'))
+            shifted = dict(row, rise='2026-09-23T10:03:00+00:00',
+                           peak='2026-09-23T10:08:00+00:00', set='2026-09-23T10:13:00+00:00')
+            features.export_calendar([shifted], path)
+            new_uid = next(line for line in path.read_text().splitlines() if line.startswith('UID:'))
+            self.assertEqual(old_uid, new_uid)
+
     def test_catalog_merges_without_mutating_and_validates_labels_and_ids(self):
         builtin = {10: ('Old', 'demo', 'Old object')}
         with tempfile.TemporaryDirectory() as directory:

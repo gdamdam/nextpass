@@ -18,7 +18,7 @@ plots = ["matplotlib>=3.7"]
 nextpass = "meteor_passes:main"
 
 [tool.setuptools]
-py-modules = ["meteor_passes", "terminal_view", "radio_metadata", "planning_features", "sky_images"]
+py-modules = ["meteor_passes", "terminal_view", "radio_metadata", "planning_features", "sky_images", "live_view", "recent_reports", "reminder_service"]
 
 [tool.setuptools.dynamic]
 version = {attr = "meteor_passes.APP_VERSION"}

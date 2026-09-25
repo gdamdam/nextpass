@@ -81,7 +81,7 @@ def stamp(row, key, tz):
 
 
 def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts, radio=None,
-           stationary=()):
+           stationary=(), reports=None):
     width = max(40, min(100, shutil.get_terminal_size((80,24)).columns))
     colors = Colors(args.color)
     def paragraph(text, rgb=None):
@@ -93,8 +93,8 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
     print(colors.paint('='*min(width,78),MUTED))
     paragraph(f'{args.lat:.3f}, {args.lon:.3f} | {args.altitude:g} m | {args.timezone}')
     paragraph(f'{start:%Y-%m-%d %H:%M %Z} -> {end:%Y-%m-%d %H:%M %Z}')
-    paragraph(f'Windows above {args.horizon:g} deg; peak >= {args.min_elevation:g} deg. Ranked by geometry, not guaranteed signal strength.')
-    heading('\nBEST OPPORTUNITIES')
+    paragraph(f'Windows above {args.horizon:g} deg; peak >= {args.min_elevation:g} deg. Ranked by {args.rank_by}; signal strength is unknown.')
+    heading('\nTOP GEOMETRIC OPPORTUNITIES')
     paragraph('Elevation: red = low | yellow = moderate | green = high', MUTED)
     for r in ranked[:args.top]:
         peak = stamp(r,'peak',tz)
@@ -127,6 +127,8 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
             paragraph(f"  {a:%H:%M:%S} -> {b:%H:%M:%S} | {r['window_minutes']:.1f} min | {path}")
         if 'visible_at_peak' in r:
             paragraph(f"  At peak: satellite {'sunlit' if r['satellite_sunlit_at_peak'] else 'in shadow'}; Sun {r['sun_altitude_at_peak_deg']:.1f} deg; visual candidate {'yes' if r['visible_at_peak'] else 'no'}.")
+            if r.get('visible_during_pass'):
+                paragraph(f"  Sampled visual window: {r['visual_candidate_start']} to {r['visual_candidate_end']} (weather and brightness unknown).")
         if a.date()!=peak.date() or b.date()!=peak.date() or a.utcoffset()!=b.utcoffset():
             paragraph(f'  Full window: {a:%Y-%m-%d %H:%M:%S %Z} -> {b:%Y-%m-%d %H:%M:%S %Z}')
     if not rows and not stationary:
@@ -197,5 +199,19 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
                 transmitter_id = tx.get('transmitter_id', 'unknown')
                 paragraph(f"  {transmitter_id} {description} | {frequency} | mode {tx.get('expected_mode', 'unknown')} | {baud_text} | protocol {tx.get('protocol', 'unknown')} | catalog status {catalog_status} | fetched {fetched} | published catalog; not live")
         paragraph(f"Source: {radio.get('attribution', 'radio catalog')}; license: {radio.get('license', 'unknown')}. Catalog data is not a live transmitter claim.")
+    if reports is not None:
+        heading('\nRECENT AMSAT USER REPORTS (PAST 24 HOURS)')
+        if reports.get('status') == 'unavailable':
+            paragraph(f"Reports unavailable: {reports.get('reason', 'unknown reason')}")
+        else:
+            if reports.get('status') == 'stale_cached_reports':
+                paragraph(f"Cached summary is {reports.get('cache_age_hours', '?')} hours old; its 24-hour window is relative to the fetch time.")
+            if not reports.get('satellites'):
+                paragraph('No matching reports in the fetched summary.')
+            for label, entries in reports['satellites'].items():
+                for entry in entries:
+                    paragraph(f"{label} {entry.get('satellite_display_name', '')}: {entry.get('report_count', 0)} "
+                              f"{entry.get('report', 'unknown')} reports; latest {entry.get('latest_reported_time', 'unknown')}")
+        paragraph('Volunteer reports describe past reception elsewhere. They do not prove current or local transmitter activity.')
     paragraph('Verify active transmitter frequency/mode against AMSAT or SatNOGS before the pass (METEOR LRPT starting tune: 137.900 MHz / 72k). Refresh orbital data before receiving.')
     paragraph('Use --plots 3 for more sky paths; --plot-rank 2 for a specific ranked pass; --no-plot for schedule only.')

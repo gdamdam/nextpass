@@ -91,6 +91,27 @@ class FeatureCliTests(unittest.TestCase):
                 self.assertIn('BEGIN:VEVENT', content)
                 self.assertEqual('BEGIN:VALARM' in content, minutes == '15')
 
+    def test_duration_ranking_and_private_location_setup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'passes.json'
+            code, _, err = self.run_cli('--rank-by', 'duration', '--json', str(output))
+            self.assertEqual(code, 0, err)
+            rows = json.loads(output.read_text())['passes']
+            ranked = sorted(rows, key=lambda row: row['rank'])
+            self.assertEqual([row['window_minutes'] for row in ranked],
+                             sorted([row['window_minutes'] for row in rows], reverse=True))
+            location = Path(directory) / 'location.json'
+            code, _, err = self.run_cli('--save-location', '--location-config', str(location))
+            self.assertEqual(code, 0, err)
+            self.assertEqual(location.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(json.loads(location.read_text())['timezone'], 'UTC')
+
+    def test_live_mode_reaches_display(self):
+        with patch('live_view.show_live') as live:
+            code, _, err = self.run_cli('--live')
+        self.assertEqual(code, 0, err)
+        live.assert_called_once()
+
     def test_offline_visibility_missing_ephemeris_never_downloads(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch('skyfield.api.Loader', side_effect=AssertionError('download attempted')):

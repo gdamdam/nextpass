@@ -32,7 +32,7 @@ CATALOG = {
 }
 GROUPS = ('meteor', 'stations', 'amateur', 'metop', 'geo')
 SATELLITES = {cat: entry[0] for cat, entry in CATALOG.items()}
-APP_VERSION = '1.7.0'
+APP_VERSION = '1.8.0'
 
 # Required by Skyfield's EarthSatellite.from_omm().
 OMM_REQUIRED_FIELDS = (
@@ -303,9 +303,16 @@ def parser():
     p.add_argument('--plot-rank', type=int, help='Draw a particular ranked pass instead of the best passes')
     p.add_argument('--day-plot', type=Path, help='Save PNG/PDF/SVG of ALL passes for one satellite on --date (default today); uses one full local day and horizon 0, ignoring elevation thresholds')
     p.add_argument('--top', type=int, default=5, help='Number of best opportunities to highlight')
+    p.add_argument('--rank-by', choices=('elevation', 'duration'), default='elevation',
+                   help='Rank by highest peak elevation (default) or longest reception window; neither predicts signal strength')
+    p.add_argument('--live', action='store_true', help='Refresh current satellite azimuth, elevation and range until Ctrl-C')
+    p.add_argument('--live-interval', type=float, default=2, help='Seconds between live updates (default 2)')
+    p.add_argument('--watch', action='store_true', help='Run a local reminder loop; keep it running with your OS service manager')
+    p.add_argument('--save-location', action='store_true', help='Save --lat, --lon, --altitude and --timezone to the private location file, then exit')
     p.add_argument('--refresh', action='store_true', help='Refresh orbital elements instead of using a cache younger than 6 hours')
     p.add_argument('--offline', action='store_true', help='Use cached orbital elements without network access')
     p.add_argument('--radio', action='store_true', help='Include optional SatNOGS transmitter metadata (network/cache)')
+    p.add_argument('--recent-reports', action='store_true', help='Show recent volunteer AMSAT reception reports, separate from radio catalog')
     p.add_argument('--band', help='Limit radio metadata to overlapping downlinks in a MHz range, e.g. 137-138')
     p.add_argument('--refresh-radio', action='store_true', help='Refresh SatNOGS transmitter metadata (also enables --radio)')
     p.add_argument('--radio-file', type=Path, help='Local JSON transmitter metadata supplement/override; no network required')
@@ -345,7 +352,7 @@ def main(argv=None):
         location_path = args.location_config.expanduser()
         config_error = None
         try:
-            if location_path.exists():
+            if location_path.exists() and not args.save_location:
                 config = json.loads(location_path.read_text())
                 if not isinstance(config, dict):
                     raise ValueError('Location config must be a JSON object')
@@ -363,8 +370,28 @@ def main(argv=None):
                 raise ValueError(f'Location missing and {location_path} could not be read ({config_error}). Fix its permissions, or pass --lat, --lon, --altitude and --timezone.')
             raise ValueError('Location missing. Create ~/.config/radio/location.json with lat, lon, altitude, timezone; see README.md. No location is embedded in the code.')
         args.lat, args.lon, args.altitude = float(args.lat), float(args.lon), float(args.altitude)
+        if args.save_location:
+            if not -90 <= args.lat <= 90 or not -180 <= args.lon <= 180 or not math.isfinite(args.altitude):
+                raise ValueError('Invalid observer coordinates or altitude')
+            ZoneInfo(args.timezone)
+            location_path.parent.mkdir(parents=True, exist_ok=True)
+            from tempfile import NamedTemporaryFile
+            with NamedTemporaryFile(mode='w', encoding='utf-8', dir=location_path.parent, delete=False) as handle:
+                os.chmod(handle.name, 0o600)
+                json.dump(dict(lat=args.lat, lon=args.lon, altitude=args.altitude, timezone=args.timezone), handle)
+                handle.write('\n')
+                temp_path = handle.name
+            os.replace(temp_path, location_path)
+            print(f'Saved private location to {location_path}')
+            return 0
         if args.plots < 0 or (args.plot_rank is not None and args.plot_rank < 1):
             raise ValueError('--plots must be nonnegative and --plot-rank must be positive')
+        if not math.isfinite(args.live_interval) or args.live_interval < 0.25:
+            raise ValueError('--live-interval must be at least 0.25 seconds')
+        if args.watch and (args.date or args.elements or args.live):
+            raise ValueError('--watch uses current predictions; omit --date, --elements and --live')
+        if args.watch and args.reminder_minutes == 0:
+            raise ValueError('--watch requires --reminder-minutes greater than zero')
         if not 1 <= args.days <= 366 or args.top < 1:
             raise ValueError('--days must be 1..366 and --top must be positive')
         if not -90 <= args.lat <= 90 or not -180 <= args.lon <= 180 or not math.isfinite(args.altitude):
@@ -469,12 +496,14 @@ def main(argv=None):
                 annotate_visibility(rows, satellites, observer, ts, ephemeris, args.max_sun_altitude)
             finally:
                 ephemeris.close()
-            visibility = dict(evaluation='at pass peak only; not a guarantee of visibility',
+            visibility = dict(evaluation='peak and sampled reception window; not a guarantee of visibility',
                               max_sun_altitude_deg=args.max_sun_altitude, ephemeris=str(ephemeris_path))
             if args.visible_only:
-                rows = [row for row in rows if row['visible_at_peak']]
+                rows = [row for row in rows if row.get('visible_during_pass', row['visible_at_peak'])]
         rows.sort(key=lambda r: datetime.fromisoformat(r['peak']))
-        ranked = sorted(rows, key=lambda r: (-r['max_elevation_deg'], r['range_at_peak_km']))
+        ranked = sorted(rows, key=(lambda r: (-r['window_minutes'], -r['max_elevation_deg']))
+                        if args.rank_by == 'duration' else
+                        (lambda r: (-r['max_elevation_deg'], r['range_at_peak_km'])))
         for rank, row in enumerate(ranked, 1):
             row['rank'] = rank
         radio = None
@@ -492,19 +521,26 @@ def main(argv=None):
                     raise
                 warning(f'Radio metadata unavailable; keeping pass predictions ({exc}).')
                 radio = dict(status='unavailable', reason=str(exc), satellites={})
+        reports = None
+        if args.recent_reports:
+            from recent_reports import load_recent_reports
+            reports = load_recent_reports([catalog[cat][0] for cat in satellites], args.cache_dir, args.offline)
         metadata = dict(location=dict(lat=args.lat, lon=args.lon, altitude_m=args.altitude), timezone=args.timezone,
             start=start.isoformat(), end=end.isoformat(), horizon_deg=args.horizon, minimum_peak_deg=args.min_elevation,
-            ranking='Peak elevation descending, then range at peak ascending; geometric opportunity, NOT predicted SNR or transmitter status.',
+            ranking=('Reception window duration descending, then peak elevation descending' if args.rank_by == 'duration' else
+                     'Peak elevation descending, then range at peak ascending') + '; geometric opportunity, not predicted signal strength or transmitter status.',
             sources=sources, passes=rows)
         if visibility is not None:
             metadata['visibility'] = visibility
         if radio is not None:
             metadata['radio'] = radio
+        if reports is not None:
+            metadata['recent_reports'] = reports
         if stationary:
             metadata['stationary'] = stationary
         from terminal_view import render
         render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts, radio=radio,
-               stationary=stationary)
+               stationary=stationary, reports=reports)
         for path in (args.json_path, args.csv_path, args.ics):
             if path:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -514,7 +550,8 @@ def main(argv=None):
             fields = ['satellite', 'norad', 'rise', 'peak', 'set', 'max_elevation_deg',
                       'rise_azimuth_deg', 'peak_azimuth_deg', 'set_azimuth_deg',
                       'range_at_peak_km', 'window_minutes', 'geometry', 'epoch_utc', 'rank',
-                      'satellite_sunlit_at_peak', 'sun_altitude_at_peak_deg', 'visible_at_peak']
+                      'satellite_sunlit_at_peak', 'sun_altitude_at_peak_deg', 'visible_at_peak',
+                      'visual_candidate_start', 'visual_candidate_end', 'visual_candidate_minutes', 'visible_during_pass']
             with args.csv_path.open('w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields); writer.writeheader(); writer.writerows(rows)
         if args.day_plot:
@@ -530,6 +567,12 @@ def main(argv=None):
                 warning(message, bold=bold)
             print('Add --refresh for current elements, and re-run nearer the pass or with fewer --days: '
                   'accuracy falls with distance from the element epoch.', file=sys.stderr)
+        if args.live:
+            from live_view import show_live
+            show_live(satellites, observer, ts, tz, args.live_interval)
+        if args.watch:
+            from reminder_service import watch
+            watch(args, rows)
         return 0
     except ImportError:
         print('Missing Skyfield. Run: python3 -m pip install -r requirements.txt', file=sys.stderr)

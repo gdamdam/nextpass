@@ -270,7 +270,7 @@ def _fetch_norad(norad, opener=None):
         if next_url in visited:
             raise RadioMetadataError("SatNOGS pagination cycle detected")
         visited.add(next_url)
-        request = Request(next_url, headers={"Accept": "application/json", "User-Agent": "nextpass-radio/1.4.0"})
+        request = Request(next_url, headers={"Accept": "application/json", "User-Agent": "nextpass-radio/1.8.0"})
         try:
             with opener(request, timeout=FETCH_TIMEOUT) as response:
                 final_url = response.geturl() if hasattr(response, "geturl") else next_url

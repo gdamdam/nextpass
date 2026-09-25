@@ -146,11 +146,23 @@ overnight ranges like `20:00-06:00` work.
 
 Import the file into your calendar app. Events span the configured reception window,
 include pass geometry, and default to a display alarm 15 minutes before the start.
-The calendar app delivers reminders; nextpass does not run in the background.
+The calendar app delivers reminders for an imported ICS file. For direct desktop
+notifications, use the separate `--watch` mode described below.
 Timestamps use UTC so calendar apps display them in the appropriate local timezone.
-Identical satellite/window times produce stable event IDs; recalculated window times
-produce new IDs, so replace an old imported calendar when updating predictions.
+When an existing nextpass calendar is regenerated at the same path, passes from the
+same satellite with peaks within 20 minutes retain their event IDs. Calendar apps
+may still require replacing an old import. Large orbit corrections can create new IDs.
 Calendar exports contain observing times and should be kept private.
+
+For desktop notifications without a calendar import, run `./predict.sh --watch`
+under a macOS LaunchAgent or Linux user service. It checks the schedule every 30
+seconds, refreshes predictions every six hours, and uses the configured reminder
+lead time. It has no persistent queue when the computer is asleep or stopped.
+On macOS, install and start the LaunchAgent with
+`python3 scripts/macos_reminders.py install`; remove it with the same command
+ending in `uninstall`. The service uses your saved location file and keeps logs
+in `~/.cache/nextpass`. On Linux, run `./predict.sh --watch --no-plot` under a
+user service manager. Live tracking and reminders need the computer to be awake.
 
 ### Visual-pass candidates
 
@@ -161,9 +173,10 @@ Calendar exports contain observing times and should be kept private.
 ```
 
 `--visibility` annotates each pass with satellite sunlight and the observer's Sun
-altitude **at peak**. `--visible-only` keeps peaks where the satellite is sunlit and
-the Sun is at or below -6° by default. Change the darkness threshold with
-`--max-sun-altitude`. Results describe peak conditions, not the entire pass; clouds,
+altitude at peak, plus candidate times sampled through the reception window.
+`--visible-only` keeps passes with a sampled instant where the satellite is sunlit
+and the Sun is at or below -6° by default. Change the darkness threshold with
+`--max-sun-altitude`. Samples are approximate; clouds,
 brightness and obstructions are not modeled. Daylight radio passes remain useful.
 
 These options require a planetary ephemeris. First online use downloads Skyfield's
@@ -177,7 +190,8 @@ feature is disabled, and uses the same columns for empty and nonempty results.
 
 ## Reading the output
 
-- Opportunities sort by **maximum elevation**, then range at peak. A chronological
+- Opportunities sort by **maximum elevation**, then range at peak, unless
+  `--rank-by duration` sorts by reception-window length. A chronological
   schedule follows.
 - Reception windows default to **10° elevation** — these are not horizon AOS/LOS. Use
   `--horizon 0` for the horizon times you'll find in older notes.
@@ -185,7 +199,7 @@ feature is disabled, and uses the same columns for empty and nonempty results.
   **Fair** ≥20°, **Low** otherwise. Planning labels, not measured RF ratings.
 - Azimuth is clockwise from true north: N=0°, E=90°, S=180°, W=270°.
 - Range is distance at the elevation maximum, not an independently minimized distance.
-- Elevation predicts nothing about SNR, interference, antenna nulls, M2-3 fading or
+- Elevation and window length predict nothing about SNR, interference, antenna nulls, M2-3 fading or
   transmitter outages.
 - Evening passes suit radio and infrared channels; illumination only matters for
   visible imagery.
@@ -206,7 +220,8 @@ The normal command draws the highest-ranked pass plus a compact daily schedule.
 inner rings are 30° and 60°, and the center is overhead at 90°. `A` marks the
 beginning of the window, `P` the maximum elevation, `B` the end — follow the yellow
 `*` track from A to B. With the default 10° window, A and B sit inside the horizon
-ring rather than on it. This is a static prediction, not a live position display.
+ring rather than on it. This plot is a static prediction; use `--live` for
+current azimuth, elevation and range refreshed in the terminal.
 
 Colors are tuned for a black background: elevation runs bright red (low) → yellow
 (moderate) → green (high), describing **geometry, not signal strength**. Each object
@@ -254,6 +269,11 @@ Local values are labeled user-provided and do not imply that the satellite is
 currently transmitting. Confirm current frequency and activity against the source
 before receiving.
 
+`--recent-reports` adds AMSAT volunteer reception reports from the past 24 hours
+for matching satellites. These are separate from SatNOGS transmitter records and
+can disagree. A report describes a past observation elsewhere, not current local
+reception. Results are cached for one hour; `--offline` uses the cache.
+
 ## Orbital-data freshness
 
 Public CelesTrak GP data is downloaded in JSON/OMM format — the modern replacement for
@@ -285,6 +305,9 @@ The predictor reads `~/.config/radio/location.json` by default, overridable with
 and should be mode `600`. **There is no personal-location fallback in the code** — the
 program errors out instead of guessing.
 
+Create the private file from the command line with
+`./predict.sh --save-location --lat LAT --lon LON --altitude METRES --timezone AREA/CITY`.
+
 `--lat`, `--lon`, `--altitude` (metres) and `--timezone` override individual fields
 from the file. Passing all four works without any config file.
 
@@ -310,7 +333,7 @@ Tests pass a neutral location explicitly and never touch your config.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Fifty-six tests cover pass-event geometry, calendar-boundary inclusion, DST, filters,
+The test suite covers pass-event geometry, calendar-boundary inclusion, DST, filters,
 exports, satellite selection, OMM validation, cache recovery, element-file skipping,
 concurrent refreshes and stale-data rejection, plus mocked radio metadata schema,
 cache, offline, band, pagination and local-override behavior, plus calendar alarms,
