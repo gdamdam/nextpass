@@ -6,18 +6,121 @@ import os
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-import sys
 import tempfile
 import unittest
+from urllib.error import HTTPError
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 import meteor_passes as app
 from skyfield.api import EarthSatellite, load, wgs84
 
+ROOT = Path(__file__).resolve().parents[1]
+
 class PredictionTests(unittest.TestCase):
+    def test_catalog_listing_and_custom_hint_through_cli(self):
+        listing = io.StringIO()
+        with contextlib.redirect_stdout(listing):
+            self.assertEqual(app.main(['--list-satellites']), 0)
+        self.assertIn('ELEKTRO-L 3', listing.getvalue())
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = Path(directory) / 'custom.json'
+            catalog.write_text(json.dumps([{'norad': 57166, 'label': 'LONGCUSTOMSAT',
+                                            'group': 'meteor', 'name': 'METEOR-M2 3',
+                                            'color': [1, 2, 3],
+                                            'radio_hint': 'Custom downlink test.'}]))
+            code, out, err = self.run_cli('--date', '2026-09-21', '--days', '1',
+                                          '--catalog', str(catalog), '--satellites',
+                                          'LONGCUSTOMSAT', '--no-plot', '--color', 'never')
+            self.assertEqual(code, 0, err)
+            self.assertIn('Custom downlink test.', ' '.join(out.split()))
+            self.assertNotIn('METEOR LRPT 137.900', out)
+
+    def test_equal_hours_and_boolean_location_are_rejected(self):
+        self.assertIn('start and end must differ', self.run_cli('--hours', '08:00-08:00')[2])
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'location.json'
+            config.write_text(json.dumps({'lat': True, 'lon': 0, 'altitude': 0,
+                                          'timezone': 'UTC'}))
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = app.main(['--location-config', str(config), '--elements',
+                                 str(ROOT / 'examples/elements-2026-09-21.json'),
+                                 '--satellites', 'meteor'])
+            self.assertEqual(code, 2)
+            self.assertIn('boolean', err.getvalue())
+
+    def test_live_jsonl_is_machine_readable(self):
+        from nextpass.live_view import show_live
+        ts = load.timescale(builtin=True)
+        sat = EarthSatellite.from_omm(ts, json.loads((ROOT / 'examples/elements-2026-09-21.json').read_text())[0])
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), patch('nextpass.live_view.time.sleep', side_effect=KeyboardInterrupt):
+            show_live({57166: sat}, wgs84.latlon(0, 0), ts, ZoneInfo('UTC'),
+                      format='jsonl', frequency_mhz=137.9)
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]['norad'], 57166)
+        self.assertIn('receive_frequency_hz', records[0])
+
+    def test_celestrak_http_error_stops_further_queries(self):
+        elements = json.loads((ROOT / 'examples/elements-2026-09-21.json').read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            for row in elements:
+                (cache / f"{row['NORAD_CAT_ID']}.json").write_text(json.dumps([row]))
+            state = {}
+            error = HTTPError('https://celestrak.org/', 503, 'Unavailable', {}, None)
+            with patch.object(app, 'urlopen', side_effect=error) as fetch, \
+                 contextlib.redirect_stderr(io.StringIO()):
+                for row in elements:
+                    data, _source = app.load_elements(row['NORAD_CAT_ID'], cache,
+                                                      refresh=True, http_state=state)
+                    self.assertEqual(data[0]['NORAD_CAT_ID'], row['NORAD_CAT_ID'])
+            self.assertEqual(fetch.call_count, 1)
+            self.assertTrue(state['blocked'])
+            error.close()
+
+    def test_builtin_catalog_is_packaged_data(self):
+        records = json.loads((ROOT / 'catalog.json').read_text())
+        self.assertEqual(set(app.CATALOG), {record['norad'] for record in records})
+        self.assertEqual(app.GROUPS, tuple(dict.fromkeys(record['group'] for record in records)))
+        self.assertEqual(app.CATALOG_EXTRA[44903]['verified'], '2026-09-25')
+        self.assertEqual(app.APP_VERSION, '1.9.0')
+
+    def test_long_orbit_search_extends_past_three_hours(self):
+        class LongOrbit:
+            model = type('Model', (), {'no_kozai': 2 * 3.141592653589793 / (12 * 60)})()
+            def find_events(self, _observer, start, end, **_kwargs):
+                self.start, self.end = start.utc_datetime(), end.utc_datetime()
+                return [], []
+            def __sub__(self, _observer):
+                return None
+        sat = LongOrbit()
+        ts = load.timescale(builtin=True)
+        start = datetime(2026, 9, 21, tzinfo=ZoneInfo('UTC'))
+        self.assertEqual(app.predict(sat, None, ts, start, start + timedelta(hours=1),
+                                     ZoneInfo('UTC'), 10, 20), [])
+        self.assertLess(sat.start, start - timedelta(hours=12))
+
+    def test_doppler_track_and_conflicts(self):
+        from nextpass.tracking_features import annotate_overlaps, ground_plot, pointing
+        ts = load.timescale(builtin=True)
+        observer = wgs84.latlon(0, 0)
+        sat = EarthSatellite.from_omm(ts, json.loads((ROOT / 'examples/elements-2026-09-21.json').read_text())[0])
+        start = datetime(2026, 9, 21, tzinfo=ZoneInfo('UTC'))
+        row = app.predict(sat, observer, ts, start, start + timedelta(days=1),
+                          ZoneInfo('UTC'), 10, 20)[0]
+        arrival = pointing(sat, observer, ts, datetime.fromisoformat(row['rise']), 137.9)
+        departure = pointing(sat, observer, ts, datetime.fromisoformat(row['set']), 137.9)
+        self.assertGreater(arrival['receive_frequency_hz'], 137900000)
+        self.assertLess(departure['receive_frequency_hz'], 137900000)
+        self.assertIn('footprint_radius_km', arrival)
+        self.assertIn('A', ground_plot(row, sat, ts))
+        other = dict(row, satellite='OTHER', norad=99901)
+        annotate_overlaps([row, other])
+        self.assertEqual(row['overlaps'], ['OTHER'])
+
     def run_cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -39,7 +142,8 @@ class PredictionTests(unittest.TestCase):
             self.assertTrue(both)
             for r in both:
                 rise, peak, setting = [datetime.fromisoformat(r[k]) for k in ('rise','peak','set')]
-                self.assertLess(rise, peak); self.assertLess(peak, setting)
+                self.assertLess(rise, peak)
+                self.assertLess(peak, setting)
                 for boundary in (rise, setting):
                     altitude = (sat-observer).at(ts.from_datetime(boundary)).altaz()[0].degrees
                     self.assertAlmostEqual(altitude, 10, delta=.15)
@@ -47,10 +151,13 @@ class PredictionTests(unittest.TestCase):
 
     def test_export_ranking_hours_and_passes(self):
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory)/'passes.json'; csv = Path(directory)/'passes.csv'
+            output = Path(directory)/'passes.json'
+            csv = Path(directory)/'passes.csv'
             code, stdout, err = self.run_cli('--date','2026-09-21','--days','3','--hours','08:00-22:00','--json',str(output),'--csv',str(csv))
             self.assertEqual(code,0,err)
-            data=json.loads(output.read_text()); rows=data['passes']; self.assertTrue(rows)
+            data=json.loads(output.read_text())
+            rows=data['passes']
+            self.assertTrue(rows)
             self.assertTrue(all(8<=datetime.fromisoformat(r['peak']).hour<22 for r in rows))
             ranked=sorted(rows,key=lambda r:r['rank'])
             self.assertEqual([r['max_elevation_deg'] for r in ranked], sorted([r['max_elevation_deg'] for r in rows],reverse=True))
@@ -58,7 +165,8 @@ class PredictionTests(unittest.TestCase):
 
     def test_stale_dates_rejected(self):
         code,out,err=self.run_cli('--date','2027-01-01','--days','1')
-        self.assertEqual(code,2); self.assertIn('orbital epoch',err)
+        self.assertEqual(code,2)
+        self.assertIn('orbital epoch',err)
 
     def test_stale_warnings_print_last_and_bold(self):
         both = io.StringIO()
@@ -82,10 +190,12 @@ class PredictionTests(unittest.TestCase):
 
     def test_validation_requires_complete_omm_and_rejects_bad_cache(self):
         elements = json.loads((ROOT/'examples/elements-2026-09-21.json').read_text())
-        incomplete = copy.deepcopy(elements[0]); del incomplete['BSTAR']
+        incomplete = copy.deepcopy(elements[0])
+        del incomplete['BSTAR']
         with self.assertRaisesRegex(ValueError, 'BSTAR'):
             app.validate([incomplete], 57166)
-        invalid_epoch = copy.deepcopy(elements[0]); invalid_epoch['EPOCH'] = '2026-09-21T06:53:42+00:00'
+        invalid_epoch = copy.deepcopy(elements[0])
+        invalid_epoch['EPOCH'] = '2026-09-21T06:53:42+00:00'
         with self.assertRaisesRegex(ValueError, 'cannot be loaded by Skyfield'):
             app.validate_constructible(invalid_epoch, load.timescale(builtin=True))
         with tempfile.TemporaryDirectory() as directory:
@@ -143,8 +253,10 @@ class PredictionTests(unittest.TestCase):
                     errors.append(exc)
             with patch.object(app, 'urlopen', side_effect=fetch), patch.object(app.os, 'replace', side_effect=synchronized_replace):
                 threads = [threading.Thread(target=refresh) for _ in range(2)]
-                for thread in threads: thread.start()
-                for thread in threads: thread.join(timeout=10)
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join(timeout=10)
             self.assertTrue(all(not thread.is_alive() for thread in threads))
             self.assertEqual(errors, [])
             self.assertEqual(app.validate(json.loads((cache/'57166.json').read_text()), 57166)['NORAD_CAT_ID'], 57166)
@@ -162,8 +274,10 @@ class PredictionTests(unittest.TestCase):
             cached = [elements[0]]
             cache.mkdir(exist_ok=True)
             (cache/'57166.json').write_text(json.dumps(cached))
-            invalid = copy.deepcopy(cached[0]); del invalid['BSTAR']
-            with patch.object(app, 'urlopen', return_value=Response(json.dumps([invalid]))):
+            invalid = copy.deepcopy(cached[0])
+            del invalid['BSTAR']
+            with patch.object(app, 'urlopen', return_value=Response(json.dumps([invalid]))), \
+                 contextlib.redirect_stderr(io.StringIO()):
                 data, source = app.load_elements(57166, cache, refresh=True)
             self.assertEqual(data, cached)
             self.assertTrue(source.startswith('fallback cache:'))
@@ -174,7 +288,7 @@ class PredictionTests(unittest.TestCase):
         self.assertEqual(app.select('iss'), {25544:'ISS'})
         self.assertEqual(app.select('meteor'), {57166:'M2-3', 59051:'M2-4'})
         self.assertEqual(app.select('stations'), {25544:'ISS', 48274:'CSS'})
-        self.assertEqual(set(app.select('amateur')), {39444,44909,27607,61781})
+        self.assertEqual(set(app.select('amateur')), {39444,44909,27607,61781,43017,24278})
         self.assertEqual(app.select('61781'), {61781:'AO-123'})
         # Mixed tokens dedupe and keep catalog order regardless of how they were typed.
         self.assertEqual(list(app.select('iss,meteor,ISS')), [57166,59051,25544])
@@ -183,7 +297,7 @@ class PredictionTests(unittest.TestCase):
         self.assertEqual(self.run_cli('--satellites','nope')[0], 2)
 
     def test_elements_file_skips_absent_objects(self):
-        # The fixture holds only the two METEOR birds; the other six are skipped, not fatal.
+        # The fixture holds only the two METEOR birds; missing built-ins are skipped.
         code, out, err = self.run_cli('--days','1','--date','2026-09-21')
         self.assertEqual(code, 0)
         self.assertIn('no element set for NORAD 25544', err)
@@ -440,4 +554,5 @@ class PredictionTests(unittest.TestCase):
             finally:
                 blocked.chmod(0o600)
 
-if __name__=='__main__': unittest.main()
+if __name__=='__main__':
+    unittest.main()

@@ -15,13 +15,13 @@ Quick, terminal-based planning for satellite reception.
 
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
-<img alt="Skyfield 1.55" src="https://img.shields.io/badge/skyfield-1.55%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.8.0" src="https://img.shields.io/badge/nextpass-v1.8.0-0f766e?style=for-the-badge">
+<img alt="Skyfield 1.55 or newer 1.x" src="https://img.shields.io/badge/skyfield-1.55%2B%20·%20SGP4-7c3aed?style=for-the-badge">
+<img alt="nextpass v1.9.0" src="https://img.shields.io/badge/nextpass-v1.9.0-0f766e?style=for-the-badge">
 </p>
 <p>
 <a href="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml/badge.svg"></a>
 <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue?style=flat-square"></a>
-<img alt="Objects" src="https://img.shields.io/badge/objects-11%20tracked-0f766e?style=flat-square">
+<img alt="Catalog" src="https://img.shields.io/badge/catalog-curated-0f766e?style=flat-square">
 <img alt="Data" src="https://img.shields.io/badge/data-CelesTrak%20GP%2FOMM-b45309?style=flat-square">
 </p>
 
@@ -36,7 +36,14 @@ Quick, terminal-based planning for satellite reception.
 ```sh
 git clone https://github.com/gdamdam/nextpass.git
 cd nextpass
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
 ```
+
+On Windows PowerShell, use `py -3 -m venv .venv`, then
+`.venv\Scripts\python.exe -m pip install -e .` and
+`.venv\Scripts\Activate.ps1`. Both platforms expose the same `nextpass` command.
 
 ### 2. Set your private location
 
@@ -44,7 +51,7 @@ Run this once with your coordinates and IANA timezone. NextPass creates a
 private file outside the repository with owner-only permissions:
 
 ```sh
-./predict.sh --save-location --lat LAT --lon LON --altitude METRES --timezone AREA/CITY
+nextpass --save-location --lat LAT --lon LON --altitude METRES --timezone AREA/CITY
 ```
 
 Alternatively, create `~/.config/radio/location.json` yourself:
@@ -63,11 +70,11 @@ chmod 600 ~/.config/radio/location.json
 ### 3. Predict passes
 
 ```sh
-./predict.sh --days 7
+nextpass --days 7
 ```
 
-The launcher creates `.venv` and installs dependencies on first use. It then
-downloads orbital data and prints your schedule. No personal location is built in.
+The first prediction downloads orbital data and prints your schedule. No personal
+location is built in.
 
 ---
 
@@ -77,7 +84,7 @@ A one-day Meteor forecast for Wellington, New Zealand (a neutral example locatio
 trimmed after the first sky plot:
 
 ```sh
-./predict.sh --lat -41.29 --lon 174.78 --altitude 20 --timezone Pacific/Auckland --days 1 --satellites meteor --plots 1
+nextpass --lat -41.29 --lon 174.78 --altitude 20 --timezone Pacific/Auckland --days 1 --satellites meteor --plots 1
 ```
 
 <p align="center">
@@ -88,33 +95,36 @@ trimmed after the first sky plot:
 
 ## 🛰 Choose satellites
 
-| Group | Built-in satellites |
-|---|---|
-| `meteor` | METEOR-M2 3, METEOR-M2 4 |
-| `stations` | ISS, CSS |
-| `amateur` | AO-73, RS-44, SO-50, AO-123 |
-| `metop` | METOPB, METOPC |
-| `geo` | GOES18 (geostationary: fixed pointing, no passes) |
+The built-in list lives in [`catalog.json`](catalog.json). See current labels,
+groups, NORAD IDs, and verification dates with:
 
 ```sh
-./predict.sh --satellites meteor --days 3
-./predict.sh --satellites iss,m2-4,so-50 --days 3
+nextpass --list-satellites
 ```
 
-Omit `--satellites` to include all eleven. You can also use NORAD IDs or a
-[custom catalog](docs/guide.md#extend-the-satellite-catalog).
+```sh
+nextpass --satellites meteor --days 3
+nextpass --satellites iss,m2-4,so-50 --days 3
+```
+
+Omit `--satellites` to include all built-ins. You can also use a NORAD ID
+directly or a [custom catalog](docs/guide.md#extend-the-satellite-catalog).
 
 ---
 
 ## 🎛 Common tasks
 
-Add these options to `./predict.sh --days 7`:
+Add these options to `nextpass --days 7`:
 
 | Task | Options |
 |---|---|
 | Find higher passes during convenient hours | `--min-elevation 40 --hours 08:00-22:00` |
 | Prefer longer reception windows | `--rank-by duration` |
+| Prefer daylight ground tracks for weather imagery | `--rank-by imagery` |
 | Watch live pointing angles | `--live --satellites meteor` |
+| Stream rotor-ready azimuth/elevation records | `--live --live-format jsonl --satellites M2-4` |
+| Plan Doppler correction at 137.9 MHz | `--frequency 137.9 --track-csv track.csv` |
+| Show a ground position and horizon footprint | `--ground-track` |
 | Export a calendar with a 30-minute reminder | `--ics passes.ics --reminder-minutes 30` |
 | Run local desktop reminders | `--watch --reminder-minutes 30` |
 | Export results for other tools | `--json passes.json --csv passes.csv` |
@@ -125,14 +135,21 @@ Add these options to `./predict.sh --days 7`:
 | Show the schedule without sky plots | `--no-plot` |
 | Include low passes normally hidden by the 20° minimum | `--all-passes` |
 
+`--frequency 137.9` prints estimated downlink tuning at AOS, peak, and LOS;
+`--track-csv` adds a sampled frequency and azimuth/elevation schedule. `--live`
+updates pointing angles until Ctrl-C, and `--live-format jsonl` streams them
+for other software. Nextpass does not command a rotor or retune an SDR.
+`--rank-by imagery` samples daylight beneath the satellite and downloads a
+planetary ephemeris on first use.
+
 ### Reminders
 
 Import an ICS file to get alarms from your calendar app. For desktop
 notifications, `--watch` checks for passes and refreshes predictions every six
 hours.
 
-- **macOS:** Run `python3 scripts/macos_reminders.py install` to start a background
-  service. Use `uninstall` to remove it.
+- **macOS:** Run `nextpass --service install` to start a background
+  service. Run `nextpass --service uninstall` to remove it.
 - **Linux:** Run `--watch` under a user service manager.
 
 Service logs can contain your location.
@@ -148,14 +165,18 @@ will be active during your pass.
 Regenerate an ICS file at the same path to retain event IDs when a predicted
 peak shifts by 20 minutes or less.
 
-Run `./predict.sh --help` for all options.
+The schedule flags overlapping passes on different satellites so a single SDR
+operator can choose which one to receive.
+
+Run `nextpass --help` for all options.
 
 ---
 
 ## 📖 Read the results
 
 **Ranking:** Passes sort by peak elevation. Use `--rank-by duration` to favor
-longer reception windows. Both are geometry-based: neither predicts signal
+longer reception windows, or `--rank-by imagery` to favor daylight beneath the
+satellite along the pass. All are geometry-based: none predicts signal
 strength or whether a transmitter is active. Antennas, obstructions and
 interference also affect reception.
 
@@ -166,7 +187,9 @@ Only passes peaking at 20° or higher appear.
 It cannot account for clouds, brightness or local obstructions. The first online use
 downloads a planetary ephemeris.
 
-Refresh orbital data with `--refresh` before observing.
+Orbital data is cached for six hours. Use `--refresh` when it is old and you
+need current elements; avoid repeated refreshes within CelesTrak's two-hour
+update cycle.
 
 **Privacy:** Exports contain coordinates, and pass times can reveal your
 location. Keep them and your location file outside Git; ignore rules alone do
@@ -176,18 +199,17 @@ not prevent accidental sharing.
 
 ## 🗓 Daily sky-path pictures
 
-Install image support once into the launcher's environment:
+Install image support into the active environment:
 
 ```sh
-./predict.sh --help >/dev/null   # creates .venv on first use
-.venv/bin/python -m pip install 'matplotlib>=3.7'
+python -m pip install 'matplotlib>=3.7'
 ```
 
 Save every above-horizon pass for one satellite on a local calendar day:
 
 ```sh
-./predict.sh --satellites M2-4 --date 2026-09-23 --day-plot meteor-day.png --no-plot
-./predict.sh --satellites M2-4 --day-plot meteor-today.pdf --no-plot
+nextpass --satellites M2-4 --date 2026-09-23 --day-plot meteor-day.png --no-plot
+nextpass --satellites M2-4 --day-plot meteor-today.pdf --no-plot
 ```
 
 Omit `--date` to plot today in your configured timezone. Save as PNG, PDF or
@@ -208,7 +230,7 @@ Ordinary predictions do not need Matplotlib.
 Include low passes in the normal terminal schedule without making a picture:
 
 ```sh
-./predict.sh --days 2 --satellites meteor --all-passes
+nextpass --days 2 --satellites meteor --all-passes
 ```
 
 `--all-passes` overrides both elevation thresholds to 0°; date, satellite and

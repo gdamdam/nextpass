@@ -1,0 +1,209 @@
+[
+  {
+    "norad": 57166,
+    "label": "M2-3",
+    "group": "meteor",
+    "name": "METEOR-M2 3",
+    "color": [
+      100,
+      220,
+      255
+    ],
+    "verified": "2026-09-22",
+    "radio_hint": "METEOR LRPT 137.900 MHz / 72k; HRPT near 1700 MHz."
+  },
+  {
+    "norad": 59051,
+    "label": "M2-4",
+    "group": "meteor",
+    "name": "METEOR-M2 4",
+    "color": [
+      245,
+      140,
+      255
+    ],
+    "verified": "2026-09-22",
+    "radio_hint": "METEOR LRPT 137.900 MHz / 72k; HRPT near 1700 MHz."
+  },
+  {
+    "norad": 25544,
+    "label": "ISS",
+    "group": "stations",
+    "name": "ISS (ZARYA)",
+    "color": [
+      110,
+      255,
+      140
+    ],
+    "verified": "2026-09-22",
+    "radio_hint": "ISS SSTV uses 145.800 MHz when an event is scheduled."
+  },
+  {
+    "norad": 48274,
+    "label": "CSS",
+    "group": "stations",
+    "name": "CSS (TIANHE)",
+    "color": [
+      255,
+      215,
+      100
+    ],
+    "verified": "2026-09-22"
+  },
+  {
+    "norad": 39444,
+    "label": "AO-73",
+    "group": "amateur",
+    "name": "FUNCUBE-1 (AO-73)",
+    "color": [
+      140,
+      200,
+      255
+    ],
+    "verified": "2026-09-22",
+    "radio_hint": "AO-73 telemetry 145.935 MHz; linear downlink 145.950–145.970 MHz."
+  },
+  {
+    "norad": 44909,
+    "label": "RS-44",
+    "group": "amateur",
+    "name": "RS-44 & BREEZE-KM R/B",
+    "color": [
+      255,
+      175,
+      120
+    ],
+    "verified": "2026-09-22",
+    "radio_hint": "RS-44 linear downlink 435.610–435.670 MHz."
+  },
+  {
+    "norad": 27607,
+    "label": "SO-50",
+    "group": "amateur",
+    "name": "SAUDISAT 1C (SO-50)",
+    "color": [
+      180,
+      255,
+      200
+    ],
+    "verified": "2026-09-22",
+    "radio_hint": "SO-50 FM downlink 436.795 MHz; repeater requires arming."
+  },
+  {
+    "norad": 61781,
+    "label": "AO-123",
+    "group": "amateur",
+    "name": "ASRTU-1 (AO-123)",
+    "color": [
+      215,
+      170,
+      255
+    ],
+    "verified": "2026-09-22",
+    "radio_hint": "AO-123 FM downlink 435.400 MHz."
+  },
+  {
+    "norad": 43017,
+    "label": "AO-91",
+    "group": "amateur",
+    "name": "RADFXSAT (FOX-1B)",
+    "color": [
+      255,
+      170,
+      110
+    ],
+    "radio_hint": "AO-91 FM downlink 145.960 MHz; avoid access in eclipse.",
+    "verified": "2026-09-25"
+  },
+  {
+    "norad": 24278,
+    "label": "FO-29",
+    "group": "amateur",
+    "name": "JAS-2 (FO-29)",
+    "color": [
+      175,
+      210,
+      255
+    ],
+    "radio_hint": "FO-29 linear downlink 435.800–435.900 MHz; scheduled operation.",
+    "verified": "2026-09-25"
+  },
+  {
+    "norad": 38771,
+    "label": "METOPB",
+    "group": "metop",
+    "name": "METOP-B",
+    "color": [
+      255,
+      140,
+      140
+    ],
+    "verified": "2026-09-23",
+    "radio_hint": "METOP AHRPT near 1701 MHz."
+  },
+  {
+    "norad": 43689,
+    "label": "METOPC",
+    "group": "metop",
+    "name": "METOP-C",
+    "color": [
+      140,
+      255,
+      220
+    ],
+    "verified": "2026-09-23",
+    "radio_hint": "METOP AHRPT near 1701 MHz."
+  },
+  {
+    "norad": 32958,
+    "label": "FY3A",
+    "group": "fengyun",
+    "name": "FENGYUN 3A",
+    "color": [
+      170,
+      230,
+      255
+    ],
+    "radio_hint": "FY-3A AHRPT 1704.5 MHz (SatNOGS catalog listing).",
+    "verified": "2026-09-25"
+  },
+  {
+    "norad": 39260,
+    "label": "FY3C",
+    "group": "fengyun",
+    "name": "FENGYUN 3C",
+    "color": [
+      130,
+      230,
+      190
+    ],
+    "radio_hint": "FY-3C AHRPT 1701.3–1701.4 MHz (SatNOGS catalog listing).",
+    "verified": "2026-09-25"
+  },
+  {
+    "norad": 51850,
+    "label": "GOES18",
+    "group": "geo",
+    "name": "GOES 18",
+    "color": [
+      255,
+      200,
+      255
+    ],
+    "verified": "2026-09-23",
+    "radio_hint": "GOES HRIT/EMWIN 1694.1 MHz."
+  },
+  {
+    "norad": 44903,
+    "label": "EL3",
+    "group": "geo",
+    "name": "ELEKTRO-L 3",
+    "color": [
+      255,
+      180,
+      220
+    ],
+    "radio_hint": "Elektro-L 3 LRIT 1691 MHz (SatNOGS catalog listing).",
+    "verified": "2026-09-25"
+  }
+]

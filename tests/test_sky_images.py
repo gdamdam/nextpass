@@ -34,7 +34,7 @@ class DayPlotTests(unittest.TestCase):
                 self.assertEqual(self.run_cli('--day-plot','day.png',*extra)[0],2)
     def test_formats_and_empty(self):
         try:
-            import matplotlib
+            __import__('matplotlib.pyplot')
         except ImportError:
             self.skipTest('optional Matplotlib not installed')
         with tempfile.TemporaryDirectory() as d:

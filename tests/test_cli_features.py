@@ -117,7 +117,7 @@ class FeatureCliTests(unittest.TestCase):
             with patch('skyfield.api.Loader', side_effect=AssertionError('download attempted')):
                 code, _, err = self.run_cli('--visible-only', '--offline', '--cache-dir', directory)
             self.assertEqual(code, 2)
-            self.assertIn('ephemeris', err)
+            self.assertIn('--elements supplies orbital data directly', err)
 
     def test_visible_only_filters_before_ranking_and_closes_ephemeris(self):
         def annotate(rows, *_args):

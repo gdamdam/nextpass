@@ -21,6 +21,8 @@ reports/
 *.sigmf-*
 *.csv
 *.json
+!catalog.json
+!nextpass/catalog.json
 *.png
 *.html
 *passes*.txt

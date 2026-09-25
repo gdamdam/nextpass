@@ -20,26 +20,26 @@ Commands below run from the repository root.
 ```sh
 git clone https://github.com/gdamdam/nextpass.git
 cd nextpass
-./predict.sh --days 7
-```
-
-Python 3.9+. On first use the launcher builds `.venv` and installs Skyfield; the
-first run also downloads orbital data. You'll get a ranked list of opportunities, a
-day-by-day schedule, and a sky plot of the best pass.
-
-To install the command with pip, create an environment and install this directory:
-
-```sh
 python3 -m venv .venv
 source .venv/bin/activate
-pip install .
-nextpass --version
+pip install -e .
+nextpass --days 7
+```
+
+Python 3.9+. The first run downloads orbital data. You'll get a ranked list of opportunities, a
+day-by-day schedule, and a sky plot of the best pass.
+
+On Windows PowerShell, install into a virtual environment with:
+
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
+.venv\Scripts\Activate.ps1
 nextpass --days 7
 ```
 
 Installed runs cache orbital elements in `$XDG_CACHE_HOME/nextpass` when
-`XDG_CACHE_HOME` is set, or `~/.cache/nextpass` otherwise. The source launcher
-uses the same default. To keep a source checkout's cache inside the repository,
+`XDG_CACHE_HOME` is set, or `~/.cache/nextpass` otherwise. To keep a source checkout's cache inside the repository,
 pass `--cache-dir .cache`.
 
 > [!IMPORTANT]
@@ -51,50 +51,40 @@ pass `--cache-dir .cache`.
 
 ## What it tracks
 
-Eleven built-in objects, in five groups; extend or override them with `--catalog`. NORAD IDs were verified against the live CelesTrak
-catalog on 2026-09-22.
+The built-in objects live in [`catalog.json`](../catalog.json), with a verification
+date for each NORAD ID. Extend or override them with `--catalog`.
 
-| Label | Object | NORAD | Group | Why you'd chase it |
-|---|---|---|---|---|
-| `M2-3` | METEOR-M2 3 | 57166 | `meteor` | LRPT weather imagery, 137.900 MHz / 72k |
-| `M2-4` | METEOR-M2 4 | 59051 | `meteor` | LRPT weather imagery, LRPT weather imagery |
-| `ISS` | ISS (ZARYA) | 25544 | `stations` | SSTV events and APRS digipeater on 2 m; brightest thing in the sky |
-| `CSS` | CSS (TIANHE) | 48274 | `stations` | Chinese space station — visual spotting, occasional SSTV |
-| `AO-73` | FUNCUBE-1 | 39444 | `amateur` | BPSK telemetry beacon + SSB/CW linear transponder |
-| `RS-44` | RS-44 (DOSAAF-85) | 44909 | `amateur` | Excellent high-orbit linear transponder, long passes |
-| `SO-50` | SAUDISAT 1C | 27607 | `amateur` | The classic easy FM repeater bird |
-| `AO-123` | ASRTU-1 | 61781 | `amateur` | V/U transponder and image downlink |
-| `METOPB` | METOP-B | 38771 | `metop` | AHRPT weather imagery, L-band 1701.3 MHz |
-| `METOPC` | METOP-C | 43689 | `metop` | AHRPT weather imagery, L-band 1701.3 MHz |
-| `GOES18` | GOES 18 | 51850 | `geo` | HRIT/EMWIN, 1694.1 MHz; geostationary at ~137°W |
+Run `nextpass --list-satellites` for every built-in label, group, NORAD ID,
+object name, and verification date. The JSON file is the source of truth, so a
+catalog addition does not require a documentation table update.
 
 > [!NOTE]
-> **GOES-18 does not move.** It orbits once per day above the equator, so it sits at a
-> fixed point in your sky and never rises or sets. Instead of passes, nextpass prints
+> **Geostationary objects such as GOES-18 and Elektro-L 3 do not traverse the sky.** They orbit once per day above the equator and sit at a
+> fixed point in your sky and never rise or set. Instead of passes, nextpass prints
 > the azimuth and elevation to aim a fixed dish at (or says it is below your horizon;
-> it is only visible from roughly the Americas' Pacific side and the Pacific). The
-> JSON export lists it under `stationary`. `--day-plot` rejects it.
+> visibility depends on your location). JSON lists them under `stationary`.
+> `--day-plot` rejects them.
 
 > [!WARNING]
-> **This tool predicts geometry, not transmissions.** It never queries transmitter
-> status. Several of these are well past design life, amateur payloads get switched
+> **This tool predicts geometry, not transmissions.** It does not query live transmitter
+> operation. Several of these are well past design life, amateur payloads get switched
 > off, and modes change. Confirm current frequency and activity against AMSAT or
-> SatNOGS before a pass. A pass in this table is an opportunity, not a promise of signal.
+> SatNOGS before a pass. A predicted pass is an opportunity, not a promise of signal.
 
 ### Pick a subset
 
 ```sh
-./predict.sh --satellites meteor           # only the weather birds
-./predict.sh --satellites iss              # only the ISS
-./predict.sh --satellites stations         # ISS + CSS
-./predict.sh --satellites amateur          # the four ham satellites
-./predict.sh --satellites iss,m2-4,so-50   # any mix of labels
-./predict.sh --satellites 25544            # or raw NORAD IDs
+nextpass --satellites meteor           # only the weather birds
+nextpass --satellites iss              # only the ISS
+nextpass --satellites stations         # ISS + CSS
+nextpass --satellites amateur          # the curated ham group
+nextpass --satellites iss,m2-4,so-50   # any mix of labels
+nextpass --satellites 25544            # or raw NORAD IDs
 ```
 
 Labels, group names and NORAD IDs can be mixed freely and are case-insensitive.
 Duplicates collapse, and output always follows catalog order. Omit the flag to get
-all eleven.
+all built-ins.
 
 ### Extend the satellite catalog
 
@@ -110,6 +100,10 @@ Python. Labels must be unique ignoring case; labels and groups cannot contain co
 or control characters. Custom labels, groups and IDs work with `--satellites`.
 For example, `--catalog catalog.json --satellites favorites` selects the ISS above.
 New objects need matching CelesTrak data or an element row supplied via `--elements`.
+Optional `color` (RGB array), `radio_hint` (short sentence), and `verified`
+(`YYYY-MM-DD`) fields control terminal presentation and record the catalog check.
+The same fields are accepted in user `--catalog` files. A bare NORAD number in
+`--satellites` can also fetch an object without creating a catalog entry.
 Omitting `--satellites` includes the merged catalog.
 
 ---
@@ -117,17 +111,17 @@ Omitting `--satellites` includes the merged catalog.
 ## Everyday commands
 
 ```sh
-./predict.sh --date 2026-09-23 --days 3                          # fixed start date
-./predict.sh --days 7 --min-elevation 40 --hours 08:00-22:00 --top 5
-./predict.sh --days 7 --json passes.json --csv passes.csv        # export
-./predict.sh --days 3 --horizon 0                                # geometric AOS/LOS
-./predict.sh --days 3 --refresh                                  # force fresh orbits
-./predict.sh --days 3 --offline                                  # use cache only
-./predict.sh --days 3 --radio --band 137-138                    # optional SatNOGS transmitter catalog
-./predict.sh --days 3 --radio --offline                         # use cached radio catalog only
-./predict.sh --days 3 --radio-file radio-overrides.json         # local radio metadata, no network
-./predict.sh --days 3 --refresh-radio                           # refresh the optional catalog
-./predict.sh --help
+nextpass --date 2026-09-23 --days 3                          # fixed start date
+nextpass --days 7 --min-elevation 40 --hours 08:00-22:00 --top 5
+nextpass --days 7 --json passes.json --csv passes.csv        # export
+nextpass --days 3 --horizon 0                                # geometric AOS/LOS
+nextpass --days 3 --refresh                                  # force fresh orbits
+nextpass --days 3 --offline                                  # use cache only
+nextpass --days 3 --radio --band 137-138                    # optional SatNOGS transmitter catalog
+nextpass --days 3 --radio --offline                         # use cached radio catalog only
+nextpass --days 3 --radio-file radio-overrides.json         # local radio metadata, no network
+nextpass --days 3 --refresh-radio                           # refresh the optional catalog
+nextpass --help
 ```
 
 Without `--date` the interval runs from now to the same local time N days later. With
@@ -139,9 +133,9 @@ overnight ranges like `20:00-06:00` work.
 ### Calendar events and reminders
 
 ```sh
-./predict.sh --days 7 --ics passes.ics
-./predict.sh --days 7 --ics passes.ics --reminder-minutes 30
-./predict.sh --days 7 --ics passes.ics --reminder-minutes 0  # no alarms
+nextpass --days 7 --ics passes.ics
+nextpass --days 7 --ics passes.ics --reminder-minutes 30
+nextpass --days 7 --ics passes.ics --reminder-minutes 0  # no alarms
 ```
 
 Import the file into your calendar app. Events span the configured reception window,
@@ -154,22 +148,22 @@ same satellite with peaks within 20 minutes retain their event IDs. Calendar app
 may still require replacing an old import. Large orbit corrections can create new IDs.
 Calendar exports contain observing times and should be kept private.
 
-For desktop notifications without a calendar import, run `./predict.sh --watch`
+For desktop notifications without a calendar import, run `nextpass --watch`
 under a macOS LaunchAgent or Linux user service. It checks the schedule every 30
 seconds, refreshes predictions every six hours, and uses the configured reminder
 lead time. It has no persistent queue when the computer is asleep or stopped.
 On macOS, install and start the LaunchAgent with
-`python3 scripts/macos_reminders.py install`; remove it with the same command
+`nextpass --service install`; remove it with the same command
 ending in `uninstall`. The service uses your saved location file and keeps logs
-in `~/.cache/nextpass`. On Linux, run `./predict.sh --watch --no-plot` under a
+in `~/.cache/nextpass`. On Linux, run `nextpass --watch --no-plot` under a
 user service manager. Live tracking and reminders need the computer to be awake.
 
 ### Visual-pass candidates
 
 ```sh
-./predict.sh --satellites stations --days 3 --visibility
-./predict.sh --satellites stations --days 3 --visible-only
-./predict.sh --visible-only --max-sun-altitude -12 --ephemeris /path/to/de421.bsp
+nextpass --satellites stations --days 3 --visibility
+nextpass --satellites stations --days 3 --visible-only
+nextpass --visible-only --max-sun-altitude -12 --ephemeris /path/to/de421.bsp
 ```
 
 `--visibility` annotates each pass with satellite sunlight and the observer's Sun
@@ -191,8 +185,8 @@ feature is disabled, and uses the same columns for empty and nonempty results.
 ## Reading the output
 
 - Opportunities sort by **maximum elevation**, then range at peak, unless
-  `--rank-by duration` sorts by reception-window length. A chronological
-  schedule follows.
+  `--rank-by duration` sorts by reception-window length or `--rank-by imagery`
+  sorts by sampled daylight beneath the satellite. A chronological schedule follows.
 - Reception windows default to **10° elevation** — these are not horizon AOS/LOS. Use
   `--horizon 0` for the horizon times you'll find in older notes.
 - Default minimum peak elevation is 20°. Labels: **Excellent** ≥60°, **Good** ≥40°,
@@ -201,19 +195,44 @@ feature is disabled, and uses the same columns for empty and nonempty results.
 - Range is distance at the elevation maximum, not an independently minimized distance.
 - Elevation and window length predict nothing about SNR, interference, antenna nulls, M2-3 fading or
   transmitter outages.
-- Evening passes suit radio and infrared channels; illumination only matters for
-  visible imagery.
+- Evening passes suit radio and infrared channels. Visible-channel weather imagery
+  needs daylight beneath the satellite; use `--rank-by imagery` with a planetary
+  ephemeris. This is distinct from `--visible-only`, which seeks a dark observer.
+
+### Doppler, live pointing, and ground tracks
+
+```sh
+nextpass --satellites M2-4 --frequency 137.9 --track-csv meteor-track.csv
+nextpass --satellites M2-4 --live --frequency 137.9
+nextpass --satellites M2-4 --live --live-format jsonl
+nextpass --satellites M2-4 --ground-track
+```
+
+`--frequency` takes a nominal downlink in MHz. Nextpass estimates received Hz
+from the changing slant range; it is a first-order Doppler calculation, not an
+automatic receiver retune. `--track-csv` samples each reception window every
+30 seconds by default (`--track-step` changes the interval). Its azimuth and
+elevation columns can be imported by rotor software; nextpass does not send
+commands to a rotor. `--live-format jsonl` emits only one JSON object per
+satellite and refresh, with time, azimuth, elevation, range, ground position,
+footprint radius, and Doppler fields when `--frequency` is set. The ordinary
+`--live` mode is a table refreshed until Ctrl-C.
+
+`--ground-track` prints the subpoint and geometric horizon footprint radius at
+peak and a small map of the best pass. The footprint is not a terrain or antenna
+coverage guarantee. The schedule marks overlapping reception windows on
+different satellites to help single-SDR operators choose a target.
 
 ## Terminal sky plots and colors
 
 The normal command draws the highest-ranked pass plus a compact daily schedule.
 
 ```sh
-./predict.sh --days 3 --plots 3        # draw the three best passes
-./predict.sh --days 3 --plot-rank 2    # draw pass #2 from this run's ranking
-./predict.sh --days 3 --no-plot        # schedule only
-./predict.sh --days 3 --color never    # plain text
-./predict.sh --days 3 --color always | less -R
+nextpass --days 3 --plots 3        # draw the three best passes
+nextpass --days 3 --plot-rank 2    # draw pass #2 from this run's ranking
+nextpass --days 3 --no-plot        # schedule only
+nextpass --days 3 --color never    # plain text
+nextpass --days 3 --color always | less -R
 ```
 
 **Anatomy of a plot.** North is up, east is right. The outer circle is the horizon,
@@ -227,7 +246,7 @@ Colors are tuned for a black background: elevation runs bright red (low) → yel
 (moderate) → green (high), describing **geometry, not signal strength**. Each object
 keeps a stable color in the schedule, so M2-3 is always cyan and the ISS always green.
 
-ANSI truecolor, as supported by modern macOS terminals. Color turns itself off when
+Nextpass uses truecolor when `COLORTERM` advertises it, otherwise 256-color ANSI. Color turns itself off when
 output is redirected, when `TERM=dumb`, or when `NO_COLOR` is set; `--color always`
 overrides that. No background color is imposed. Plots track terminal width and
 collapse to compact pass cards in narrow windows — 80 columns or wider is best.
@@ -280,6 +299,9 @@ Public CelesTrak GP data is downloaded in JSON/OMM format — the modern replace
 TLE — and propagated with Skyfield/SGP4. Each satellite is cached separately for six
 hours. A failed download falls back to a valid cache with an explicit warning; no cache
 produces a clear error. Every satellite's epoch is printed and recorded in JSON output.
+After a CelesTrak HTTP error, nextpass stops further requests in that run and
+uses valid caches where available. It does not automatically retry those errors,
+following [CelesTrak's usage policy](https://celestrak.org/usage-policy.php).
 
 Dates more than **7 days** from an epoch warn; more than **14 days** are rejected
 unless you pass `--allow-stale`. Those are safeguards, not accuracy guarantees —
@@ -288,11 +310,11 @@ refresh close to the pass.
 For historical work, supply a CelesTrak-format JSON array:
 
 ```sh
-./predict.sh --date 2026-09-21 --days 1 --elements historical-elements.json
+nextpass --date 2026-09-21 --days 1 --elements historical-elements.json
 ```
 
 Objects **absent from that file are skipped with a warning** rather than aborting the
-run, so an old two-satellite element file still works against the full eleven-object
+run, so an old two-satellite element file still works against the full built-in
 catalog. Pair it with `--satellites` to silence the warnings entirely.
 
 Never use current orbital data for precise predictions months into the past or future;
@@ -306,7 +328,7 @@ and should be mode `600`. **There is no personal-location fallback in the code**
 program errors out instead of guessing.
 
 Create the private file from the command line with
-`./predict.sh --save-location --lat LAT --lon LON --altitude METRES --timezone AREA/CITY`.
+`nextpass --save-location --lat LAT --lon LON --altitude METRES --timezone AREA/CITY`.
 
 `--lat`, `--lon`, `--altitude` (metres) and `--timezone` override individual fields
 from the file. Passing all four works without any config file.

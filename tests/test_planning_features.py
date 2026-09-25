@@ -1,16 +1,33 @@
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
 import planning_features as features
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class PlanningFeatureTests(unittest.TestCase):
+    def test_catalog_optional_metadata_merges_and_validates(self):
+        base = {25544: {'color': (1, 2, 3), 'radio_hint': 'Original hint.'}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'catalog.json'
+            path.write_text(json.dumps([
+                {'norad': 25544, 'label': 'ISS', 'group': 'stations', 'name': 'ISS',
+                 'color': [20, 30, 40], 'radio_hint': 'ISS SSTV 145.800 MHz.',
+                 'verified': '2026-09-25'},
+                {'norad': 99901, 'label': 'TEST', 'group': 'custom', 'name': 'Test'},
+            ]))
+            self.assertEqual(features.load_catalog_extras(path, base)[25544]['color'], (20, 30, 40))
+            self.assertEqual(features.load_catalog_extras(path, base)[25544]['verified'], '2026-09-25')
+            self.assertEqual(features.load_catalog_extras(path, base)[99901], {})
+            self.assertEqual(base[25544]['color'], (1, 2, 3))
+            for invalid in ([256, 0, 0], [True, 0, 0], [1, 2]):
+                path.write_text(json.dumps([{'norad': 99901, 'color': invalid}]))
+                with self.assertRaisesRegex(ValueError, 'color'):
+                    features.load_catalog_extras(path)
+
     def test_calendar_uses_utc_stable_uid_escaped_text_and_alarm(self):
         row = {
             'norad': 25544,

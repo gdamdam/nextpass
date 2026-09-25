@@ -15,14 +15,23 @@ requires-python = ">=3.9"
 plots = ["matplotlib>=3.7"]
 
 [project.scripts]
-nextpass = "meteor_passes:main"
+nextpass = "nextpass.meteor_passes:main"
 
 [tool.setuptools]
-py-modules = ["meteor_passes", "terminal_view", "radio_metadata", "planning_features", "sky_images", "live_view", "recent_reports", "reminder_service"]
+packages = ["nextpass"]
+
+[tool.setuptools.package-data]
+nextpass = ["catalog.json"]
 
 [tool.setuptools.dynamic]
-version = {attr = "meteor_passes.APP_VERSION"}
+version = {attr = "nextpass.version.APP_VERSION"}
 dependencies = {file = ["requirements.txt"]}
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
 
 [project.urls]
 Homepage = "https://github.com/gdamdam/nextpass"
