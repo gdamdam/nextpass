@@ -125,38 +125,52 @@ Add these options to `./predict.sh --days 7`:
 | Show the schedule without sky plots | `--no-plot` |
 | Include low passes normally hidden by the 20° minimum | `--all-passes` |
 
-Calendar reminders are delivered by your calendar app after import. `--watch`
-keeps checking upcoming passes and sends macOS or Linux desktop notifications.
-On macOS, `python3 scripts/macos_reminders.py install` installs and starts a
-per-user background service; use `uninstall` to remove it. On Linux, run `--watch`
-under a user service manager. It refreshes predictions every six hours. Service
-logs can contain your location. Visual-pass filtering downloads a
-planetary ephemeris on first use. See all options with
-`./predict.sh --help`.
+### Reminders
 
-`--radio` shows published SatNOGS transmitter records; `--recent-reports`
-shows past AMSAT volunteer reception reports. Neither proves that a transmitter
-is active during your pass. Regenerating an ICS file at the same path retains
-event IDs when the same satellite's predicted peak shifts by 20 minutes or less.
+Import an ICS file to get alarms from your calendar app. For desktop
+notifications, `--watch` checks for passes and refreshes predictions every six
+hours.
+
+- **macOS:** Run `python3 scripts/macos_reminders.py install` to start a background
+  service. Use `uninstall` to remove it.
+- **Linux:** Run `--watch` under a user service manager.
+
+Service logs can contain your location.
+
+### Radio reports
+
+`--radio` shows published SatNOGS transmitter records. `--recent-reports` shows
+past AMSAT volunteer reception reports. Neither confirms that a transmitter
+will be active during your pass.
+
+### Calendar updates
+
+Regenerate an ICS file at the same path to retain event IDs when a predicted
+peak shifts by 20 minutes or less.
+
+Run `./predict.sh --help` for all options.
 
 ---
 
 ## 📖 Read the results
 
-Passes rank by maximum elevation by default. `--rank-by duration` favors longer
-reception windows. Neither ranking measures signal strength; antenna gain,
-obstructions, interference and transmitter activity can change the useful order.
-By default, reception windows start and end at 10° elevation, and only passes
-peaking at 20° or higher are included.
+**Ranking:** Passes sort by peak elevation. Use `--rank-by duration` to favor
+longer reception windows. Both are geometry-based: neither predicts signal
+strength or whether a transmitter is active. Antennas, obstructions and
+interference also affect reception.
 
-Visual filtering samples sunlight and darkness throughout the reception window,
-but cannot predict clouds, apparent brightness or local obstructions.
-Predictions describe satellite geometry. They do not guarantee an active
-transmitter or a receivable signal. Refresh orbital data with `--refresh` before
-an observing session.
+**Default thresholds:** A reception window starts and ends at 10° elevation.
+Only passes peaking at 20° or higher appear.
 
-**Keep exports private:** coordinates and even pass times can reveal your location.
-Keep your location file outside Git; generated files being ignored is only a precaution.
+**Visual passes:** The filter samples sunlight and darkness across each pass.
+It cannot account for clouds, brightness or local obstructions. The first online use
+downloads a planetary ephemeris.
+
+Refresh orbital data with `--refresh` before observing.
+
+**Privacy:** Exports contain coordinates, and pass times can reveal your
+location. Keep them and your location file outside Git; ignore rules alone do
+not prevent accidental sharing.
 
 ---
 
@@ -176,18 +190,20 @@ Save every above-horizon pass for one satellite on a local calendar day:
 ./predict.sh --satellites M2-4 --day-plot meteor-today.pdf --no-plot
 ```
 
-Omit `--date` for today in your configured timezone. PNG, PDF and SVG are supported;
-PDF is convenient for printing. The picture has one chronological sky panel per
-pass, direction arrows, rise/set times, peak time and elevation, and orbital epoch.
-North is up, east right, the outer ring is the horizon and the centre is overhead.
+Omit `--date` to plot today in your configured timezone. Save as PNG, PDF or
+SVG; PDF is handy for printing. Each pass gets a sky panel with direction
+arrows, rise/set times, peak time and elevation, and orbital epoch. North is
+up, east is right, the outer ring is the horizon, and the centre is overhead.
 
-`--day-plot` selects exactly one full local day (overriding `--days`), sets both
-horizon and minimum elevation to 0°, and requires a single `--satellites` entry.
-This includes the low passes normally hidden by the 20° minimum. `--hours` and
-`--visible-only` are rejected because they would hide passes. As with normal
-predictions, a pass belongs to the day containing its peak; complete tracks can
-cross midnight. `--no-plot` suppresses only terminal ASCII plots, not the image.
-Normal commands remain unchanged and do not require Matplotlib.
+`--day-plot` uses one satellite and one full local day:
+
+- It overrides `--days` and includes low passes by setting both elevation
+  thresholds to 0°.
+- It rejects `--hours` and `--visible-only`, which would hide some passes.
+- A pass belongs to the day of its peak, even if its track crosses midnight.
+- `--no-plot` hides terminal plots but still saves the image.
+
+Ordinary predictions do not need Matplotlib.
 
 Include low passes in the normal terminal schedule without making a picture:
 
