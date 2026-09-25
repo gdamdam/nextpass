@@ -397,6 +397,7 @@ def parser():
     p.add_argument('--csv', type=Path, dest='csv_path', help='Save chronological passes as CSV')
     p.add_argument('--catalog', type=Path, help='JSON satellite catalog entries to add or override built-ins')
     p.add_argument('--ics', type=Path, help='Export calendar events with optional advance alarms')
+    p.add_argument('--report', type=Path, help='Save a shareable HTML report with timings and sky charts of the --top passes')
     p.add_argument('--reminder-minutes', type=int, default=15, help='Calendar alarm minutes before window start; 0 disables alarms')
     p.add_argument('--visibility', action='store_true', help='Annotate sunlight and observer darkness at pass peak')
     p.add_argument('--visible-only', action='store_true', help='Only passes sunlit at peak with a dark observer; enables --visibility')
@@ -413,6 +414,8 @@ def main(argv=None):
             from nextpass.service_installer import main as service_main
             return service_main([args.service])
         from nextpass.planning_features import export_calendar, annotate_visibility
+        if args.report and args.report.suffix.lower() not in ('.html', '.htm'):
+            raise ValueError('--report must end in .html or .htm')
         if args.reminder_minutes < 0:
             raise ValueError('--reminder-minutes must be nonnegative')
         if not -90 <= args.max_sun_altitude <= 90:
@@ -675,7 +678,7 @@ def main(argv=None):
             render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts,
                    radio=radio, stationary=stationary, reports=reports,
                    catalog_extra=catalog_extra, mask=mask)
-        for path in (args.json_path, args.csv_path, args.ics, args.track_csv):
+        for path in (args.json_path, args.csv_path, args.ics, args.track_csv, args.report):
             if path:
                 path.parent.mkdir(parents=True, exist_ok=True)
         if args.json_path:
@@ -700,6 +703,11 @@ def main(argv=None):
             from nextpass.sky_images import save_day_plot
             save_day_plot(rows, satellites, observer, ts, tz, start, args.day_plot, label=next(iter(selected.values())), mask=mask)
             print(f'\nSaved day sky plot: {args.day_plot}')
+        if args.report:
+            from nextpass.report_html import write_report
+            write_report(args.report, rows, ranked, sources, args, start, end, tz, satellites, observer, ts,
+                         radio=radio, stationary=stationary, mask=mask)
+            print(f'\nSaved report: {args.report}')
         if args.ics:
             export_calendar(rows, args.ics, reminder_minutes=args.reminder_minutes)
         if stale_warnings:

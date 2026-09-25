@@ -16,7 +16,7 @@ Quick, terminal-based planning for satellite reception.
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
 <img alt="Skyfield 1.55 or newer 1.x" src="https://img.shields.io/badge/skyfield-1.55%2B%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.10.0" src="https://img.shields.io/badge/nextpass-v1.10.0-0f766e?style=for-the-badge">
+<img alt="nextpass v1.11.0" src="https://img.shields.io/badge/nextpass-v1.11.0-0f766e?style=for-the-badge">
 </p>
 <p>
 <a href="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml/badge.svg"></a>
@@ -131,6 +131,7 @@ Add these options to `nextpass --days 7`:
 | Export a calendar with a 30-minute reminder | `--ics passes.ics --reminder-minutes 30` |
 | Run local desktop reminders | `--watch --reminder-minutes 30` |
 | Export results for other tools | `--json passes.json --csv passes.csv` |
+| Save a shareable report for your phone | `--report passes.html` |
 | Show possible visual passes | `--satellites stations --visible-only` |
 | Include radio frequency information | `--radio` |
 | See recent volunteer reception reports | `--recent-reports` |
@@ -200,6 +201,24 @@ update cycle.
 **Privacy:** Exports contain coordinates, and pass times can reveal your
 location. Keep them and your location file outside Git; ignore rules alone do
 not prevent accidental sharing.
+
+---
+
+## 📱 Shareable pass report
+
+Save one HTML file with the schedule and sky charts, ready to send to a phone:
+
+```sh
+nextpass --days 3 --report passes.html --no-plot
+```
+
+The report has a card for each of the `--top` passes, with start, peak and end
+times, azimuths, window length and a sky chart. A table lists every pass by
+day. It adds Doppler offsets with `--frequency`, visual notes with
+`--visibility`, radio data with `--radio`, and the shaded horizon mask when one
+is configured. It needs no extra packages and works offline. It follows the
+phone's light or dark mode. Use the browser's Share, Print or Save as PDF to
+keep a PDF copy.
 
 ---
 
