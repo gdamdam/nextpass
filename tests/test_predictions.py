@@ -79,7 +79,6 @@ class PredictionTests(unittest.TestCase):
                     self.assertEqual(data[0]['NORAD_CAT_ID'], row['NORAD_CAT_ID'])
             self.assertEqual(fetch.call_count, 1)
             self.assertTrue(state['blocked'])
-            error.close()
 
     def test_builtin_catalog_is_packaged_data(self):
         records = json.loads((ROOT / 'catalog.json').read_text())
