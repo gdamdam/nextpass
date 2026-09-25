@@ -59,7 +59,7 @@ object name, and verification date. The JSON file is the source of truth, so a
 catalog addition does not require a documentation table update.
 
 > [!NOTE]
-> **Geostationary objects such as GOES-18 and Elektro-L 3 do not traverse the sky.** They orbit once per day above the equator and sit at a
+> **Geostationary objects such as GOES-18, GOES-19, and Elektro-L 3 do not traverse the sky.** They orbit once per day above the equator and sit at a
 > fixed point in your sky and never rise or set. Instead of passes, nextpass prints
 > the azimuth and elevation to aim a fixed dish at (or says it is below your horizon;
 > visibility depends on your location). JSON lists them under `stationary`.

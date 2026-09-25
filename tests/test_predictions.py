@@ -86,7 +86,10 @@ class PredictionTests(unittest.TestCase):
         self.assertEqual(set(app.CATALOG), {record['norad'] for record in records})
         self.assertEqual(app.GROUPS, tuple(dict.fromkeys(record['group'] for record in records)))
         self.assertEqual(app.CATALOG_EXTRA[44903]['verified'], '2026-09-25')
-        self.assertEqual(app.APP_VERSION, '1.9.0')
+        self.assertEqual(app.select('geo')[60133], 'GOES19')
+        self.assertEqual(app.CATALOG_EXTRA[60133]['verified'], '2026-09-25')
+        self.assertEqual(app.CATALOG_EXTRA[60133]['radio_hint'], 'GOES HRIT/EMWIN 1694.1 MHz.')
+        self.assertEqual(app.APP_VERSION, '1.9.1')
 
     def test_long_orbit_search_extends_past_three_hours(self):
         class LongOrbit:

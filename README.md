@@ -16,7 +16,7 @@ Quick, terminal-based planning for satellite reception.
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
 <img alt="Skyfield 1.55 or newer 1.x" src="https://img.shields.io/badge/skyfield-1.55%2B%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.9.0" src="https://img.shields.io/badge/nextpass-v1.9.0-0f766e?style=for-the-badge">
+<img alt="nextpass v1.9.1" src="https://img.shields.io/badge/nextpass-v1.9.1-0f766e?style=for-the-badge">
 </p>
 <p>
 <a href="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml/badge.svg"></a>
@@ -95,8 +95,9 @@ nextpass --lat -41.29 --lon 174.78 --altitude 20 --timezone Pacific/Auckland --d
 
 ## 🛰 Choose satellites
 
-The built-in list lives in [`catalog.json`](catalog.json). See current labels,
-groups, NORAD IDs, and verification dates with:
+The built-in list lives in [`catalog.json`](catalog.json), including GOES-18
+and GOES-19 for fixed-dish HRIT/EMWIN planning. See current labels, groups,
+NORAD IDs, and verification dates with:
 
 ```sh
 nextpass --list-satellites
