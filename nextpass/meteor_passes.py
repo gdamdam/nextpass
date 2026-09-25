@@ -15,6 +15,7 @@ from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 from nextpass.version import APP_VERSION
 from nextpass.planning_features import load_catalog, load_catalog_extras
+from nextpass.horizon import load_mask, mask_elevation, clear_window
 
 _CATALOG_PATH = Path(__file__).with_name('catalog.json')
 # Git checkouts without symlink support contain the symlink target as text.
@@ -218,12 +219,24 @@ def validate_constructible(row, ts):
         raise ValueError(f'OMM element set cannot be loaded by Skyfield: {exc}') from exc
 
 
+def write_private_json(path, payload, indent=None):
+    """Atomically write JSON with owner-only permissions, replacing any existing file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    from tempfile import NamedTemporaryFile
+    with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, delete=False) as handle:
+        os.chmod(handle.name, 0o600)
+        json.dump(payload, handle, indent=indent)
+        handle.write('\n')
+        temp_path = handle.name
+    os.replace(temp_path, path)
+
+
 def direction(degrees):
     names = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
     return names[int((degrees + 11.25) // 22.5) % 16]
 
 
-def predict(sat, observer, ts, start, end, tz, horizon, min_elevation, label=None):
+def predict(sat, observer, ts, start, end, tz, horizon, min_elevation, label=None, mask=None):
     # A HEO pass can last much longer than three hours. Search at least one
     # whole orbit on both sides so a rise preceding the requested interval is
     # paired with its culmination and set.
@@ -240,24 +253,58 @@ def predict(sat, observer, ts, start, end, tz, horizon, min_elevation, label=Non
         elif event == 1 and rise is not None:
             peaks.append(moment)
         elif event == 2 and rise is not None and peaks:
-            peak = max(peaks, key=lambda p: topocentric.at(p).altaz()[0].degrees)
-            peak_dt = peak.utc_datetime()
-            alt, az, distance = topocentric.at(peak).altaz()
+            rise_t, set_t = rise, moment
+            clear_minutes = blocked_minutes = None
+            horizon_mask = False
+            if mask is not None:
+                # Clip the reported window to the samples that clear the surveyed
+                # mask too, so rise/set/peak reflect what is actually receivable.
+                times = ts.linspace(rise_t, set_t, 241)
+                alt_arr, az_arr, dist_arr = topocentric.at(times).altaz()
+                clear_idx = clear_window(az_arr.degrees, alt_arr.degrees, mask, horizon)
+                if not clear_idx:
+                    rise, peaks = None, []
+                    continue
+                first_i, last_i = clear_idx[0], clear_idx[-1]
+                peak_i = max(clear_idx, key=lambda i: alt_arr.degrees[i])
+                rise_t, set_t = times[first_i], times[last_i]
+                peak_dt = times[peak_i].utc_datetime()
+                alt_deg = float(alt_arr.degrees[peak_i])
+                az_deg = float(az_arr.degrees[peak_i])
+                distance_km = float(dist_arr.km[peak_i])
+                rise_az = float(az_arr.degrees[first_i])
+                set_az = float(az_arr.degrees[last_i])
+                window_minutes = round(float(set_t - rise_t) * 1440, 2)
+                step_minutes = float(times[1] - times[0]) * 1440
+                clear_minutes = round(len(clear_idx) * step_minutes, 2)
+                blocked_minutes = round(max(0.0, window_minutes - clear_minutes), 2)
+                horizon_mask = True
+            else:
+                peak = max(peaks, key=lambda p: topocentric.at(p).altaz()[0].degrees)
+                peak_dt = peak.utc_datetime()
+                alt, az, distance = topocentric.at(peak).altaz()
+                alt_deg, az_deg, distance_km = float(alt.degrees), float(az.degrees), float(distance.km)
+                rise_az = float(topocentric.at(rise_t).altaz()[1].degrees)
+                set_az = float(topocentric.at(set_t).altaz()[1].degrees)
+                window_minutes = round(float(set_t - rise_t) * 1440, 2)
             # Include by peak time, which makes adjacent date queries nonoverlapping.
-            if start <= peak_dt < end and alt.degrees >= min_elevation:
-                rise_az = topocentric.at(rise).altaz()[1].degrees
-                set_az = topocentric.at(moment).altaz()[1].degrees
-                result.append(dict(satellite=label or SATELLITES.get(sat.model.satnum, str(sat.model.satnum)), norad=sat.model.satnum,
-                    rise=rise.utc_datetime().astimezone(tz).isoformat(timespec='seconds'),
+            if start <= peak_dt < end and alt_deg >= min_elevation:
+                row = dict(satellite=label or SATELLITES.get(sat.model.satnum, str(sat.model.satnum)), norad=sat.model.satnum,
+                    rise=rise_t.utc_datetime().astimezone(tz).isoformat(timespec='seconds'),
                     peak=peak_dt.astimezone(tz).isoformat(timespec='seconds'),
-                    set=moment.utc_datetime().astimezone(tz).isoformat(timespec='seconds'),
-                    max_elevation_deg=round(float(alt.degrees), 2),
-                    rise_azimuth_deg=round(float(rise_az), 1), peak_azimuth_deg=round(float(az.degrees), 1),
-                    set_azimuth_deg=round(float(set_az), 1),
-                    range_at_peak_km=round(float(distance.km), 1),
-                    window_minutes=round(float(moment-rise)*1440, 2),
-                    geometry='Excellent' if alt.degrees >= 60 else 'Good' if alt.degrees >= 40 else 'Fair' if alt.degrees >= 20 else 'Low',
-                    epoch_utc=sat.epoch.utc_datetime().isoformat(timespec='seconds')))
+                    set=set_t.utc_datetime().astimezone(tz).isoformat(timespec='seconds'),
+                    max_elevation_deg=round(alt_deg, 2),
+                    rise_azimuth_deg=round(rise_az, 1), peak_azimuth_deg=round(az_deg, 1),
+                    set_azimuth_deg=round(set_az, 1),
+                    range_at_peak_km=round(distance_km, 1),
+                    window_minutes=window_minutes,
+                    geometry='Excellent' if alt_deg >= 60 else 'Good' if alt_deg >= 40 else 'Fair' if alt_deg >= 20 else 'Low',
+                    epoch_utc=sat.epoch.utc_datetime().isoformat(timespec='seconds'))
+                if horizon_mask:
+                    row['horizon_mask'] = True
+                    row['clear_minutes'] = clear_minutes
+                    row['blocked_minutes'] = blocked_minutes
+                result.append(row)
             rise, peaks = None, []
     return result
 
@@ -279,17 +326,22 @@ def is_geostationary(sat):
     return 0.9 < revs_per_day < 1.1
 
 
-def fixed_look_angle(sat, observer, ts, when, label, horizon):
+def fixed_look_angle(sat, observer, ts, when, label, horizon, mask=None):
     from skyfield.api import wgs84
     moment = ts.from_datetime(when)
     alt, az, distance = (sat - observer).at(moment).altaz()
     _lat, lon = wgs84.latlon_of(sat.at(moment))
-    return dict(satellite=label, norad=sat.model.satnum,
+    above_flat_horizon = bool(alt.degrees > horizon)
+    above_horizon = bool(alt.degrees > max(horizon, mask_elevation(mask, az.degrees))) if mask is not None else above_flat_horizon
+    result = dict(satellite=label, norad=sat.model.satnum,
                 subsatellite_longitude_deg=round(float(lon.degrees), 1),
                 elevation_deg=round(float(alt.degrees), 1),
                 azimuth_deg=round(float(az.degrees), 1),
                 range_km=round(float(distance.km), 1),
-                above_horizon=bool(alt.degrees > horizon))
+                above_horizon=above_horizon)
+    if mask is not None:
+        result['blocked_by_horizon_mask'] = bool(above_flat_horizon and not above_horizon)
+    return result
 
 
 def parser():
@@ -324,6 +376,9 @@ def parser():
     p.add_argument('--watch', action='store_true', help='Run a local reminder loop; keep it running with your OS service manager')
     p.add_argument('--service', choices=('install', 'uninstall'), help='Install or remove the per-user macOS reminder service')
     p.add_argument('--save-location', action='store_true', help='Save --lat, --lon, --altitude and --timezone to the private location file, then exit')
+    p.add_argument('--horizon-file', type=Path, help='JSON horizon mask (list of {"az","el"} points) overriding the "horizon" key in the location file')
+    p.add_argument('--survey-horizon', action='store_true', help='Enter compass azimuth / level elevation measurements of local obstacles interactively and save them as the location horizon mask, then exit')
+    p.add_argument('--declination', type=float, help='Magnetic declination for --survey-horizon, degrees east positive; compass reading + declination = true azimuth')
     p.add_argument('--refresh', action='store_true', help='Refresh orbital elements instead of using a cache younger than 6 hours')
     p.add_argument('--offline', action='store_true', help='Use cached orbital elements without network access')
     p.add_argument('--radio', action='store_true', help='Include optional SatNOGS transmitter metadata (network/cache)')
@@ -410,16 +465,22 @@ def main(argv=None):
             if not -90 <= args.lat <= 90 or not -180 <= args.lon <= 180 or not math.isfinite(args.altitude):
                 raise ValueError('Invalid observer coordinates or altitude')
             ZoneInfo(args.timezone)
-            location_path.parent.mkdir(parents=True, exist_ok=True)
-            from tempfile import NamedTemporaryFile
-            with NamedTemporaryFile(mode='w', encoding='utf-8', dir=location_path.parent, delete=False) as handle:
-                os.chmod(handle.name, 0o600)
-                json.dump(dict(lat=args.lat, lon=args.lon, altitude=args.altitude, timezone=args.timezone), handle)
-                handle.write('\n')
-                temp_path = handle.name
-            os.replace(temp_path, location_path)
+            write_private_json(location_path, dict(lat=args.lat, lon=args.lon, altitude=args.altitude, timezone=args.timezone))
             print(f'Saved private location to {location_path}')
             return 0
+        if args.survey_horizon:
+            from nextpass.horizon import survey
+            points = survey(declination=args.declination)
+            horizon_points = [{'az': az, 'el': el} for az, el in points]
+            if args.horizon_file:
+                write_private_json(args.horizon_file, dict(horizon=horizon_points), indent=2)
+                print(f'Saved horizon mask ({len(points)} points) to {args.horizon_file}')
+            else:
+                config['horizon'] = horizon_points
+                write_private_json(location_path, config, indent=2)
+                print(f'Saved horizon mask ({len(points)} points) to {location_path}')
+            return 0
+        mask = load_mask(config, args.horizon_file)
         if args.plots < 0 or (args.plot_rank is not None and args.plot_rank < 1):
             raise ValueError('--plots must be nonnegative and --plot-rank must be positive')
         if not math.isfinite(args.live_interval) or args.live_interval < 0.25:
@@ -516,11 +577,11 @@ def main(argv=None):
                                               altitude_degrees=args.horizon)
                 if not any(event in (0, 2) for event in events):
                     # A fixed look angle barely changes with element age, so no refresh nag.
-                    stationary.append(fixed_look_angle(sat, observer, ts, start, name, args.horizon))
+                    stationary.append(fixed_look_angle(sat, observer, ts, start, name, args.horizon, mask=mask))
                     continue
             if stale:
                 stale_warnings.append(stale)
-            rows.extend(predict(sat, observer, ts, start, end, tz, args.horizon, args.min_elevation, label=name))
+            rows.extend(predict(sat, observer, ts, start, end, tz, args.horizon, args.min_elevation, label=name, mask=mask))
         if not satellites:
             raise ValueError('No selected satellites have usable orbital elements')
         if args.day_plot and stationary:
@@ -559,13 +620,13 @@ def main(argv=None):
         if args.frequency is not None or args.ground_track:
             for row in rows:
                 sample = pointing(satellites[row['norad']], observer, ts,
-                                  datetime.fromisoformat(row['peak']), args.frequency)
+                                  datetime.fromisoformat(row['peak']), args.frequency, mask=mask)
                 row['peak_track'] = sample
                 if args.frequency is not None:
                     row['doppler_schedule_hz'] = {
                         phase: pointing(satellites[row['norad']], observer, ts,
                                         datetime.fromisoformat(row[phase]),
-                                        args.frequency)['receive_frequency_hz']
+                                        args.frequency, mask=mask)['receive_frequency_hz']
                         for phase in ('rise', 'peak', 'set')}
         rank_key = ((lambda r: (-r['daylight_ground_track_minutes'], -r['max_elevation_deg']))
                     if args.rank_by == 'imagery' else
@@ -596,6 +657,7 @@ def main(argv=None):
             reports = load_recent_reports([catalog[cat][0] for cat in satellites], args.cache_dir, args.offline)
         metadata = dict(location=dict(lat=args.lat, lon=args.lon, altitude_m=args.altitude), timezone=args.timezone,
             start=start.isoformat(), end=end.isoformat(), horizon_deg=args.horizon, minimum_peak_deg=args.min_elevation,
+            horizon_mask_points=len(mask) if mask else 0,
             ranking=('Daylight ground-track time descending, then peak elevation descending' if args.rank_by == 'imagery' else
                      'Reception window duration descending, then peak elevation descending' if args.rank_by == 'duration' else
                      'Peak elevation descending, then range at peak ascending') + '; geometric opportunity, not predicted signal strength or transmitter status.',
@@ -612,7 +674,7 @@ def main(argv=None):
         if not (args.live and args.live_format == 'jsonl'):
             render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts,
                    radio=radio, stationary=stationary, reports=reports,
-                   catalog_extra=catalog_extra)
+                   catalog_extra=catalog_extra, mask=mask)
         for path in (args.json_path, args.csv_path, args.ics, args.track_csv):
             if path:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -626,6 +688,8 @@ def main(argv=None):
                       'visual_candidate_start', 'visual_candidate_end', 'visual_candidate_minutes', 'visible_during_pass',
                       'ground_sun_altitude_at_peak_deg', 'daylight_ground_track_minutes',
                       'overlaps', 'peak_track', 'doppler_schedule_hz']
+            if mask is not None:
+                fields += ['horizon_mask', 'clear_minutes', 'blocked_minutes']
             with args.csv_path.open('w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields)
                 writer.writeheader()
@@ -634,7 +698,7 @@ def main(argv=None):
             write_track_csv(args.track_csv, rows, satellites, observer, ts, args.track_step, args.frequency)
         if args.day_plot:
             from nextpass.sky_images import save_day_plot
-            save_day_plot(rows, satellites, observer, ts, tz, start, args.day_plot, label=next(iter(selected.values())))
+            save_day_plot(rows, satellites, observer, ts, tz, start, args.day_plot, label=next(iter(selected.values())), mask=mask)
             print(f'\nSaved day sky plot: {args.day_plot}')
         if args.ics:
             export_calendar(rows, args.ics, reminder_minutes=args.reminder_minutes)

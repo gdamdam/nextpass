@@ -7,7 +7,7 @@ LIGHT_KM_S = 299792.458
 EARTH_RADIUS_KM = 6371.0
 
 
-def pointing(sat, observer, ts, when, frequency_mhz=None):
+def pointing(sat, observer, ts, when, frequency_mhz=None, mask=None):
     """Return an instantaneous look angle and first-order downlink correction."""
     from skyfield.api import wgs84
 
@@ -23,6 +23,9 @@ def pointing(sat, observer, ts, when, frequency_mhz=None):
                   subsatellite_lat_deg=round(float(subpoint.latitude.degrees), 3),
                   subsatellite_lon_deg=round(float(subpoint.longitude.degrees), 3),
                   footprint_radius_km=round(footprint, 1))
+    if mask is not None:
+        from nextpass.horizon import mask_elevation
+        record['blocked_by_horizon_mask'] = bool(altitude.degrees > 0 and altitude.degrees <= mask_elevation(mask, azimuth.degrees))
     if frequency_mhz is not None:
         earlier = ts.from_datetime(when - timedelta(seconds=1))
         later = ts.from_datetime(when + timedelta(seconds=1))

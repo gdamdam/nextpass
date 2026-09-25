@@ -12,7 +12,7 @@ def require_matplotlib():
     return Figure, FigureCanvasAgg
 
 
-def save_day_plot(rows, satellites, observer, ts, tz, day, path, label=None):
+def save_day_plot(rows, satellites, observer, ts, tz, day, path, label=None, mask=None):
     Figure, Canvas = require_matplotlib()
     columns = min(3, max(1, len(rows)))
     nrows = max(1, math.ceil(len(rows) / columns))
@@ -39,6 +39,11 @@ def save_day_plot(rows, satellites, observer, ts, tz, day, path, label=None):
         ax.set_rlabel_position(135)
         ax.grid(color='#cbd5e1', linewidth=.8)
         ax.spines['polar'].set_color('#94a3b8')
+        if mask is not None:
+            from nextpass.horizon import mask_elevation
+            mask_theta = [math.radians(a) for a in range(0, 360, 2)]
+            mask_radius = [90 - mask_elevation(mask, a) for a in range(0, 360, 2)]
+            ax.fill_between(mask_theta, mask_radius, 90, color='#94a3b8', alpha=.45, zorder=1)
         ax.plot(theta, radius, color=color, linewidth=2.5)
         for i in (60, 170):
             ax.annotate('', xy=(theta[i+6], radius[i+6]), xytext=(theta[i], radius[i]), arrowprops=dict(arrowstyle='->', color=color, lw=2))
@@ -51,7 +56,10 @@ def save_day_plot(rows, satellites, observer, ts, tz, day, path, label=None):
         ax.text(.5, -.19, f'● Rise {start.strftime(fmt)}\n■ Set  {end.strftime(fmt)}', transform=ax.transAxes, ha='center', fontsize=10)
     if not rows:
         fig.text(.5, .5, 'No above-horizon passes with a peak on this local date.', ha='center', fontsize=12)
-    fig.text(.5, .055, '● Rise   → Travel direction   ★ Peak   ■ Set\nOuter ring: horizon (0°) · Centre: overhead (90°)', ha='center', fontsize=10)
+    legend = '● Rise   → Travel direction   ★ Peak   ■ Set\nOuter ring: horizon (0°) · Centre: overhead (90°)'
+    if mask is not None:
+        legend += ' · Grey rim: surveyed local horizon'
+    fig.text(.5, .055, legend, ha='center', fontsize=10)
     fig.text(.5, .015, f'Orbital epoch: {sat.epoch.utc_datetime():%Y-%m-%d %H:%M UTC} · Geometric prediction, not signal strength', ha='center', fontsize=9, color='#475569')
     fig.subplots_adjust(top=1-1.9/(5.4*nrows+1.5), bottom=1.7/(5.4*nrows+1.5), left=.07, right=.93, hspace=.65, wspace=.35)
     path.parent.mkdir(parents=True, exist_ok=True)

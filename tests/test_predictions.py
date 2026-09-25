@@ -88,7 +88,7 @@ class PredictionTests(unittest.TestCase):
         self.assertEqual(app.select('geo')[60133], 'GOES19')
         self.assertEqual(app.CATALOG_EXTRA[60133]['verified'], '2026-09-25')
         self.assertEqual(app.CATALOG_EXTRA[60133]['radio_hint'], 'GOES HRIT/EMWIN 1694.1 MHz.')
-        self.assertEqual(app.APP_VERSION, '1.9.1')
+        self.assertEqual(app.APP_VERSION, '1.10.0')
 
     def test_long_orbit_search_extends_past_three_hours(self):
         class LongOrbit:

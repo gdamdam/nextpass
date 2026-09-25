@@ -43,7 +43,7 @@ def project(azimuth, elevation, radius_x, radius_y):
     return round(radius_x + r * radius_x * math.sin(az)), round(radius_y - r * radius_y * math.cos(az))
 
 
-def sky_plot(points, peak, width=57, colors=None):
+def sky_plot(points, peak, width=57, colors=None, mask=None):
     colors = colors or Colors("never")
     # Terminal cells are typically about twice as tall as they are wide.
     rx = max(10, min(26, (width - 5) // 2))
@@ -57,6 +57,13 @@ def sky_plot(points, peak, width=57, colors=None):
             elif radius < 1 and (x == rx or y == ry):
                 grid[y][x] = '|' if x == rx else '-'
     grid[ry][rx] = '+'
+    if mask is not None:
+        from nextpass.horizon import mask_elevation
+        for az in range(0, 360, 2):
+            el = mask_elevation(mask, az)
+            if el > 0:
+                x, y = project(az, el, rx, ry)
+                grid[y][x] = '#'
     coords = [project(az, el, rx, ry) for az, el in points]
     for a, b in zip(coords, coords[1:]):
         steps = max(abs(a[0]-b[0]), abs(a[1]-b[1]), 1)
@@ -71,7 +78,8 @@ def sky_plot(points, peak, width=57, colors=None):
         lines.append(('W ' if y == ry else '  ') + ''.join(row) + (' E' if y == ry else ''))
     lines.append(' '*(rx+2)+'S')
     palette = {'.':(95,135,180), '|':(85,110,145), '-':(85,110,145), '+':WHITE,
-               '*':YELLOW, 'A':CYAN, 'B':PINK, 'P':GREEN, 'N':WHITE, 'E':WHITE, 'S':WHITE, 'W':WHITE}
+               '*':YELLOW, 'A':CYAN, 'B':PINK, 'P':GREEN, 'N':WHITE, 'E':WHITE, 'S':WHITE, 'W':WHITE,
+               '#':(170,90,90)}
     return '\n'.join(''.join(colors.paint(ch,palette[ch],ch in 'ABP') if ch in palette else ch for ch in line.rstrip()) for line in lines)
 
 
@@ -80,7 +88,7 @@ def stamp(row, key, tz):
 
 
 def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts, radio=None,
-           stationary=(), reports=None, catalog_extra=None):
+           stationary=(), reports=None, catalog_extra=None, mask=None):
     catalog_extra = catalog_extra or {}
     width = max(40, min(100, shutil.get_terminal_size((80,24)).columns))
     colors = Colors(args.color)
@@ -93,7 +101,12 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
     print(colors.paint('='*min(width,78),MUTED))
     paragraph(f'{args.lat:.3f}, {args.lon:.3f} | {args.altitude:g} m | {args.timezone}')
     paragraph(f'{start:%Y-%m-%d %H:%M %Z} -> {end:%Y-%m-%d %H:%M %Z}')
-    paragraph(f'Windows above {args.horizon:g} deg; peak >= {args.min_elevation:g} deg. Ranked by {args.rank_by}; signal strength is unknown.')
+    mask_note = f' Local horizon mask active ({len(mask)} survey points); windows and peaks are above the mask.' if mask is not None else ''
+    paragraph(f'Windows above {args.horizon:g} deg; peak >= {args.min_elevation:g} deg. Ranked by {args.rank_by}; signal strength is unknown.' + mask_note)
+    if mask is not None:
+        from nextpass.horizon import profile_text
+        heading('\nLOCAL HORIZON MASK')
+        print(profile_text(mask, width=min(width, 72)))
     heading('\nTOP GEOMETRIC OPPORTUNITIES')
     paragraph('Elevation: red = low | yellow = moderate | green = high', MUTED)
     for r in ranked[:args.top]:
@@ -135,6 +148,8 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
             paragraph(f"  Daylit ground track: {r['daylight_ground_track_minutes']:.1f} min; Sun at subpoint at peak: {r['ground_sun_altitude_at_peak_deg']:.1f} deg.")
         if r.get('overlaps'):
             paragraph('  Concurrent with: ' + ', '.join(r['overlaps']) + ' (single-receiver conflict).')
+        if r.get('horizon_mask') and r.get('blocked_minutes', 0) > 0:
+            paragraph(f"  Blocked by local horizon for {r['blocked_minutes']:.1f} min of the pass.")
         if r.get('peak_track'):
             track = r['peak_track']
             if args.ground_track:
@@ -160,8 +175,10 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
                 if args.plots:
                     # One-point path: sky_plot draws A, B and P on the same cell, leaving P.
                     position = (g['azimuth_deg'], g['elevation_deg'])
-                    print(sky_plot([position], position, min(width,57), colors))
+                    print(sky_plot([position], position, min(width,57), colors, mask=mask))
                     paragraph('P = fixed position. North up; east right. Rings: 0 / 30 / 60 deg; center: 90 deg (overhead).')
+            elif g.get('blocked_by_horizon_mask'):
+                paragraph('  Above the geometric horizon but behind a surveyed obstacle.')
             else:
                 paragraph(f"  Below your horizon (elevation {g['elevation_deg']:.1f} deg): not receivable from this location.")
     if args.ground_track and ranked:
@@ -179,7 +196,7 @@ def render(rows, ranked, sources, args, start, end, tz, satellites, observer, ts
         sat = satellites[r['norad']]
         from nextpass.meteor_passes import sample_track
         az, alt = sample_track(sat, observer, ts, r['rise'], r['set'])
-        print(sky_plot(list(zip(az,alt)),(r['peak_azimuth_deg'],r['max_elevation_deg']),min(width,57),colors))
+        print(sky_plot(list(zip(az,alt)),(r['peak_azimuth_deg'],r['max_elevation_deg']),min(width,57),colors, mask=mask))
         paragraph('A = start  ->  * = predicted path  ->  B = end; P = peak')
         paragraph('North up; east right. Rings: 0 / 30 / 60 deg; center: 90 deg (overhead). Static forecast, not live tracking.')
         for label,key,azkey in [('A','rise','rise_azimuth_deg'),('P','peak','peak_azimuth_deg'),('B','set','set_azimuth_deg')]:

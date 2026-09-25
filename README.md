@@ -16,7 +16,7 @@ Quick, terminal-based planning for satellite reception.
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
 <img alt="Skyfield 1.55 or newer 1.x" src="https://img.shields.io/badge/skyfield-1.55%2B%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.9.1" src="https://img.shields.io/badge/nextpass-v1.9.1-0f766e?style=for-the-badge">
+<img alt="nextpass v1.10.0" src="https://img.shields.io/badge/nextpass-v1.10.0-0f766e?style=for-the-badge">
 </p>
 <p>
 <a href="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml/badge.svg"></a>
@@ -61,7 +61,9 @@ Alternatively, create `~/.config/radio/location.json` yourself:
 ```
 
 Replace the neutral example with your latitude and longitude in degrees, altitude
-in metres, and IANA timezone. Restrict access to a manually created file:
+in metres, and IANA timezone. Optionally add a `"horizon"` key (a list of
+`{"az", "el"}` points, e.g. `"horizon": [{"az": 0, "el": 5}, {"az": 135, "el": 22}]`)
+surveyed with `--survey-horizon` to model local obstacles. Restrict access to a manually created file:
 
 ```sh
 chmod 600 ~/.config/radio/location.json
@@ -135,6 +137,7 @@ Add these options to `nextpass --days 7`:
 | Use previously cached data without downloads | `--offline` |
 | Show the schedule without sky plots | `--no-plot` |
 | Include low passes normally hidden by the 20° minimum | `--all-passes` |
+| Model obstacles around your antenna | `--survey-horizon` once, then nothing: every run uses the mask |
 
 `--frequency 137.9` prints estimated downlink tuning at AOS, peak, and LOS;
 `--track-csv` adds a sampled frequency and azimuth/elevation schedule. `--live`
@@ -179,13 +182,15 @@ Run `nextpass --help` for all options.
 longer reception windows, or `--rank-by imagery` to favor daylight beneath the
 satellite along the pass. All are geometry-based: none predicts signal
 strength or whether a transmitter is active. Antennas, obstructions and
-interference also affect reception.
+interference also affect reception. Local obstructions are modeled only when
+a horizon mask has been surveyed (`--survey-horizon`).
 
 **Default thresholds:** A reception window starts and ends at 10° elevation.
 Only passes peaking at 20° or higher appear.
 
 **Visual passes:** The filter samples sunlight and darkness across each pass.
-It cannot account for clouds, brightness or local obstructions. The first online use
+It cannot account for clouds or brightness, and local obstructions are modeled
+only when a horizon mask has been surveyed. The first online use
 downloads a planetary ephemeris.
 
 Orbital data is cached for six hours. Use `--refresh` when it is old and you

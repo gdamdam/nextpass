@@ -170,8 +170,9 @@ nextpass --visible-only --max-sun-altitude -12 --ephemeris /path/to/de421.bsp
 altitude at peak, plus candidate times sampled through the reception window.
 `--visible-only` keeps passes with a sampled instant where the satellite is sunlit
 and the Sun is at or below -6° by default. Change the darkness threshold with
-`--max-sun-altitude`. Samples are approximate; clouds,
-brightness and obstructions are not modeled. Daylight radio passes remain useful.
+`--max-sun-altitude`. Samples are approximate; clouds and
+brightness are not modeled, and local obstructions are modeled only when a
+horizon mask has been surveyed (see "Local horizon mask" below). Daylight radio passes remain useful.
 
 These options require a planetary ephemeris. First online use downloads Skyfield's
 `de421.bsp` into the cache directory; ordinary radio predictions do not download it.
@@ -198,6 +199,48 @@ feature is disabled, and uses the same columns for empty and nonempty results.
 - Evening passes suit radio and infrared channels. Visible-channel weather imagery
   needs daylight beneath the satellite; use `--rank-by imagery` with a planetary
   ephemeris. This is distinct from `--visible-only`, which seeks a dark observer.
+
+## Local horizon mask (field survey)
+
+`--horizon` and `--min-elevation` assume a flat, unobstructed horizon. If a
+tree, roofline or hill blocks part of your sky, survey it once and nextpass
+applies that mask to every later run: predicted windows, peaks, fixed-dish
+pointing, plots and (where noted) live output all account for it.
+
+**Survey procedure.** Stand at the antenna location. For each obstacle's top
+edge, and for each gap between obstacles, read the compass azimuth and the
+elevation angle with a level or a phone clinometer app. 8-16 points around
+the compass are usually enough to describe a horizon. Note your magnetic
+declination beforehand: true azimuth = magnetic azimuth + declination (east
+positive) — or set your compass app to true north and skip declination.
+
+Run the interactive survey:
+
+```sh
+nextpass --survey-horizon
+```
+
+It first asks for the declination (Enter for 0 if your compass already reads
+true north), then loops asking for `compass azimuth, obstacle top elevation`
+pairs (e.g. `135 22`) until you press Enter on an empty line. It prints an
+ASCII elevation-by-azimuth profile and saves the mask into your location file
+under the `"horizon"` key. `--survey-horizon` needs no orbital elements or
+network access.
+
+Use `--horizon-file mask.json` to store or load the mask from a separate file
+instead of the location file — either a JSON list of `{"az", "el"}` points or
+an object with a `"horizon"` key. It overrides any `"horizon"` key in the
+location file for that run.
+
+Once a mask is present, reported reception windows, peaks and azimuths are
+clipped to the samples that clear the mask (not just the flat `--horizon`
+elevation); a pass entirely behind an obstacle is dropped. Each affected pass
+schedule line adds `clear_minutes` and, when part of the window is
+intermittently blocked, a line noting how many minutes were blocked. Sky
+plots mark the mask with a dim red `#` line under the track, and `--day-plot`
+images shade the blocked zone in grey. Fixed-dish (geostationary) pointing
+reports when a satellite is above the geometric horizon but still behind a
+surveyed obstacle instead of printing a pointing angle.
 
 ### Doppler, live pointing, and ground tracks
 
