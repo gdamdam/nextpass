@@ -344,8 +344,18 @@ def fixed_look_angle(sat, observer, ts, when, label, horizon, mask=None):
     return result
 
 
+class HelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
+    pass
+
+
 def parser():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    supported = '\n'.join(
+        f"  {group}: " + ', '.join(label for label, entry_group, _ in CATALOG.values() if entry_group == group)
+        for group in GROUPS)
+    description = (__doc__ + '\n\nBuilt-in satellites (group: selection labels):\n' + supported
+                   + '\n\nSelect with --satellites LABEL,GROUP or a NORAD ID; default: all built-ins.'
+                   + '\nUse --list-satellites for full names and NORAD IDs, or --catalog to add satellites.')
+    p = argparse.ArgumentParser(description=description, formatter_class=HelpFormatter)
     p.add_argument('--version', action='version', version=f'%(prog)s {APP_VERSION}')
     p.add_argument('--date', type=date.fromisoformat, help='First local calendar date YYYY-MM-DD; omit to start now')
     p.add_argument('--days', type=int, default=7, help='Number of local calendar days; without --date, now to this time N days later')

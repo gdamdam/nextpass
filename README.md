@@ -11,7 +11,10 @@
 
 ### Know when to point the antenna up.
 
-Quick, terminal-based planning for satellite reception.
+Quick, terminal-based planning for satellite reception, with built-in support for
+Meteor-M2-3 and M2-4; ISS and Tiangong (CSS); AO-73, RS-44, SO-50, AO-123, AO-91
+and FO-29; Metop-B and C; Fengyun-3A and 3C; GOES-18 and 19; and Elektro-L 3.
+You can also select satellites by NORAD ID or add a custom catalog.
 
 <p>
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
@@ -60,7 +63,7 @@ Alternatively, create `~/.config/radio/location.json` yourself:
 {"lat": 0.0, "lon": 0.0, "altitude": 0, "timezone": "UTC"}
 ```
 
-Replace the neutral example with your latitude and longitude in degrees, altitude
+Enter your latitude and longitude in degrees, altitude
 in metres, and IANA timezone. Optionally add a `"horizon"` key (a list of
 `{"az", "el"}` points, e.g. `"horizon": [{"az": 0, "el": 5}, {"az": 135, "el": 22}]`)
 surveyed with `--survey-horizon` to model local obstacles. Restrict access to a manually created file:
@@ -82,7 +85,7 @@ location is built in.
 
 ## 🖥 Example output
 
-A one-day Meteor forecast for Wellington, New Zealand (a neutral example location),
+A one-day Meteor forecast for Wellington, New Zealand,
 trimmed after the first sky plot:
 
 ```sh
