@@ -107,7 +107,13 @@ def _card(row, tz, satellites, observer, ts, args, mask):
         ('Range', f"{row['range_at_peak_km']:.0f} km at peak"),
     ]
     if 'visible_at_peak' in row:
-        items.append(('Visual', 'candidate' if row['visible_at_peak'] else 'no'))
+        visible = row.get('visible_during_pass', row['visible_at_peak'])
+        visual = 'candidate' if visible else 'no'
+        if visible and row.get('visual_candidate_start') and row.get('visual_candidate_end'):
+            candidate_start = _local(row, 'visual_candidate_start', tz)
+            candidate_end = _local(row, 'visual_candidate_end', tz)
+            visual += f' ({candidate_start:%H:%M}–{candidate_end:%H:%M})'
+        items.append(('Visual', visual))
     if 'daylight_ground_track_minutes' in row:
         items.append(('Daylit track', f"{row['daylight_ground_track_minutes']:.1f} min"))
     if args.frequency is not None and row.get('doppler_schedule_hz'):

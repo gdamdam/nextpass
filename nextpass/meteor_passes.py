@@ -707,7 +707,8 @@ def main(argv=None):
             from nextpass.report_html import write_report
             write_report(args.report, rows, ranked, sources, args, start, end, tz, satellites, observer, ts,
                          radio=radio, stationary=stationary, mask=mask)
-            print(f'\nSaved report: {args.report}')
+            destination = sys.stderr if args.live and args.live_format == 'jsonl' else sys.stdout
+            print(f'\nSaved report: {args.report}', file=destination)
         if args.ics:
             export_calendar(rows, args.ics, reminder_minutes=args.reminder_minutes)
         if stale_warnings:
