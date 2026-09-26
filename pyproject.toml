@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nextpass"
 dynamic = ["version", "dependencies"]
-description = "Satellite pass prediction for weather, space station, and amateur satellites"
+description = "Terminal-based satellite reception planning for Meteor-M2-3/4, ISS, Tiangong (CSS), AO-73, RS-44, SO-50, AO-123, AO-91, FO-29, Metop-B/C, Fengyun-3A/3C, GOES-18/19 and Elektro-L 3. Supports NORAD IDs and custom catalogs."
 readme = "README.md"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
