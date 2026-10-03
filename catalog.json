@@ -36,7 +36,7 @@
       140
     ],
     "verified": "2026-09-22",
-    "radio_hint": "ISS SSTV uses 145.800 MHz when an event is scheduled."
+    "radio_hint": "ISS SSTV uses 145.800 MHz or 437.550 MHz when an event is scheduled."
   },
   {
     "norad": 48274,
