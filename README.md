@@ -1,35 +1,23 @@
 <div align="center">
 
-<h1>🔭 nextpass 🛰</h1>
+<h1>nextpass</h1>
 
-### Know when to point the antenna up.
+<p><strong>Know when to point the antenna up.</strong></p>
 
 Quick, terminal-based planning for satellite reception.
 Pick from a curated catalog, a NORAD ID, or your own custom catalog.
 
 <p>
-<img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-1f6feb?style=for-the-badge&logo=python&logoColor=white">
-<img alt="Skyfield 1.55 or newer 1.x" src="https://img.shields.io/badge/skyfield-1.55%2B%20·%20SGP4-7c3aed?style=for-the-badge">
-<img alt="nextpass v1.11.3" src="https://img.shields.io/badge/nextpass-v1.11.3-0f766e?style=for-the-badge">
-</p>
-<p>
 <a href="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/gdamdam/nextpass/actions/workflows/tests.yml/badge.svg"></a>
-<a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue?style=flat-square"></a>
-<img alt="Catalog" src="https://img.shields.io/badge/catalog-curated-0f766e?style=flat-square">
-<img alt="Data" src="https://img.shields.io/badge/data-CelesTrak%20GP%2FOMM-b45309?style=flat-square">
+<img alt="version 1.11.3" src="https://img.shields.io/badge/version-1.11.3-blue">
+<a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-green"></a>
 </p>
 
 </div>
 
----
 
-## 🧭 Contents
 
-[Quick start](#-quick-start) · [Example](#-example-output) · [Satellites](#-choose-satellites) · [Common tasks](#-common-tasks) · [Reading results](#-read-the-results) · [Pass report](#-shareable-pass-report) · [Sky-path pictures](#-daily-sky-path-pictures) · [Learn more](#-learn-more)
-
----
-
-## ⚡ Quick start
+## Quick start
 
 ### 1. Get the project
 
@@ -51,6 +39,7 @@ py -3 -m venv .venv
 ```
 
 Both platforms expose the same `nextpass` command.
+
 </details>
 
 ### 2. Set your private location
@@ -93,9 +82,8 @@ nextpass --days 7
 The first run downloads orbital data and prints your schedule.
 No personal location is built in.
 
----
 
-## 🖥 Example output
+## Example output
 
 A one-day Meteor forecast for Wellington, New Zealand, trimmed after the first sky plot:
 
@@ -107,9 +95,8 @@ nextpass --lat -41.29 --lon 174.78 --altitude 20 --timezone Pacific/Auckland --d
 <img alt="nextpass terminal output: ranked Meteor passes, schedule and a sky plot" src="docs/example-output.svg" width="720">
 </p>
 
----
 
-## 🛰 Choose satellites
+## Choose satellites
 
 Built in, from [`catalog.json`](catalog.json):
 
@@ -129,13 +116,12 @@ nextpass --satellites iss,m2-4,so-50 --days 3
 Omit `--satellites` to include all built-ins. You can also use a NORAD ID
 directly or a [custom catalog](docs/guide.md#extend-the-satellite-catalog).
 
----
 
-## 🎛 Common tasks
+## Common tasks
 
 Add these options to `nextpass --days 7`. Run `nextpass --help` for all options.
 
-**Filter and rank**
+### Filter and rank
 
 | Task | Options |
 |---|---|
@@ -146,7 +132,7 @@ Add these options to `nextpass --days 7`. Run `nextpass --help` for all options.
 | Include low passes normally hidden by the 20° minimum | `--all-passes` |
 | Model obstacles around your antenna | `--survey-horizon` once; every later run uses the mask |
 
-**Live tracking and radio**
+### Live tracking and radio
 
 | Task | Options |
 |---|---|
@@ -157,7 +143,7 @@ Add these options to `nextpass --days 7`. Run `nextpass --help` for all options.
 | Include radio frequency information | `--radio` |
 | See recent volunteer reception reports | `--recent-reports` |
 
-**Export and reminders**
+### Export and reminders
 
 | Task | Options |
 |---|---|
@@ -183,13 +169,13 @@ Add these options to `nextpass --days 7`. Run `nextpass --help` for all options.
 
 ### Reminders
 
-- **Calendar:** import the ICS file to get alarms from your calendar app.
+- Calendar: import the ICS file to get alarms from your calendar app.
   Regenerating it at the same path keeps event IDs when a predicted peak shifts
   by 20 minutes or less.
-- **Desktop:** `--watch` checks for passes and refreshes predictions every six hours.
-  - **macOS:** `nextpass --service install` starts a background service;
+- Desktop: `--watch` checks for passes and refreshes predictions every six hours.
+  - macOS: `nextpass --service install` starts a background service;
     `nextpass --service uninstall` removes it.
-  - **Linux:** run `--watch` under a user service manager.
+  - Linux: run `--watch` under a user service manager.
 
 > [!WARNING]
 > Service logs can contain your location.
@@ -203,16 +189,15 @@ Add these options to `nextpass --days 7`. Run `nextpass --help` for all options.
 The schedule flags overlapping passes on different satellites so a single SDR
 operator can choose which one to receive.
 
----
 
-## 📖 Read the results
+## Read the results
 
 | Topic | What to know |
 |---|---|
-| **Ranking** | Passes sort by peak elevation. `--rank-by duration` favors longer windows; `--rank-by imagery` favors daylight beneath the satellite. |
-| **Default thresholds** | A reception window starts and ends at 10° elevation. Only passes peaking at 20° or higher appear. |
-| **Visual passes** | The filter samples sunlight and darkness across each pass. It cannot account for clouds or brightness. The first online use downloads a planetary ephemeris. |
-| **Orbital data** | Cached for six hours. Use `--refresh` when you need current elements; avoid repeated refreshes within CelesTrak's two-hour update cycle. |
+| Ranking | Passes sort by peak elevation. `--rank-by duration` favors longer windows; `--rank-by imagery` favors daylight beneath the satellite. |
+| Default thresholds | A reception window starts and ends at 10° elevation. Only passes peaking at 20° or higher appear. |
+| Visual passes | The filter samples sunlight and darkness across each pass. It cannot account for clouds or brightness. The first online use downloads a planetary ephemeris. |
+| Orbital data | Cached for six hours. Use `--refresh` when you need current elements; avoid repeated refreshes within CelesTrak's two-hour update cycle. |
 
 > [!IMPORTANT]
 > All rankings are geometry-based: none predicts signal strength or whether a
@@ -221,13 +206,12 @@ operator can choose which one to receive.
 > surveyed (`--survey-horizon`).
 
 > [!CAUTION]
-> **Privacy:** exports contain coordinates, and pass times can reveal your
+> Privacy: exports contain coordinates, and pass times can reveal your
 > location. Keep them and your location file outside Git; ignore rules alone do
 > not prevent accidental sharing.
 
----
 
-## 📱 Shareable pass report
+## Shareable pass report
 
 Save one HTML file with the schedule and sky charts, ready to send to a phone:
 
@@ -235,7 +219,7 @@ Save one HTML file with the schedule and sky charts, ready to send to a phone:
 nextpass --days 3 --report passes.html --no-plot
 ```
 
-**Contents**
+The report contains:
 
 - A card for each of the `--top` passes: start, peak and end times, azimuths,
   window length, and a sky chart.
@@ -243,15 +227,13 @@ nextpass --days 3 --report passes.html --no-plot
 - Extras when enabled: Doppler offsets (`--frequency`), visual notes
   (`--visibility`), radio data (`--radio`), and the shaded horizon mask.
 
-**Behavior**
+It needs no extra packages and works offline:
 
-- No extra packages; works offline.
 - Follows the phone's light or dark mode.
 - Use the browser's Share, Print or Save as PDF to keep a PDF copy.
 
----
 
-## 🗓 Daily sky-path pictures
+## Daily sky-path pictures
 
 Install image support into the active environment (ordinary predictions do not need it):
 
@@ -272,7 +254,7 @@ nextpass --satellites M2-4 --day-plot meteor-today.pdf --no-plot
   and elevation, and orbital epoch.
 - North is up, east is right, the outer ring is the horizon, and the centre is overhead.
 
-**`--day-plot` rules** (one satellite, one full local day):
+`--day-plot` covers one satellite over one full local day:
 
 - Overrides `--days` and includes low passes by setting both elevation thresholds to 0°.
 - Rejects `--hours` and `--visible-only`, which would hide some passes.
@@ -288,9 +270,8 @@ nextpass --days 2 --satellites meteor --all-passes
 `--all-passes` sets both elevation thresholds to 0°; date, satellite and explicit
 hour/visibility filters still apply.
 
----
 
-## 📚 Learn more
+## Learn more
 
 - [Sky plots and output fields](docs/guide.md#reading-the-output)
 - [Calendar exports and visual passes](docs/guide.md#calendar-events-and-reminders)
@@ -300,8 +281,7 @@ hour/visibility filters still apply.
 
 Use [iqscan](https://github.com/gdamdam/iqscan) to inspect the recording afterward.
 
----
 
-## 📄 License
+## License
 
 [GPL-3.0-only](LICENSE)
