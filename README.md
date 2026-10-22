@@ -282,6 +282,10 @@ hour/visibility filters still apply.
 Use [iqscan](https://github.com/gdamdam/iqscan) to inspect the recording afterward.
 
 
+## How it's built
+
+nextpass is a free, non-commercial project, built out of love for radio. It was developed with AI coding tools; every change was designed, reviewed and tested by a human.
+
 ## License
 
 [GPL-3.0-only](LICENSE)
