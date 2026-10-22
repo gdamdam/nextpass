@@ -284,7 +284,7 @@ Use [iqscan](https://github.com/gdamdam/iqscan) to inspect the recording afterwa
 
 ## How it's built
 
-nextpass is a free, non-commercial project, built out of love for radio. It was developed with AI coding tools; every change was designed, reviewed and tested by a human.
+nextpass is a free, non-commercial project, built out of love for radio. It was developed with AI coding tools. Every change was designed, reviewed and tested by a human.
 
 ## License
 
